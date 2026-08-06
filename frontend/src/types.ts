@@ -9,6 +9,8 @@ export interface DashboardStats {
   made_request: number
   active_24h: number
   requests_today: number
+  requests_this_month: number
+  users_over_quota: number
   states: Record<UserState, number>
   conversion_rate: number
   mrr_estimate: number
@@ -41,6 +43,9 @@ export interface DashboardUser {
   trial_end: string | null
   requests_today: number
   requests_total: number
+  quota_used: number
+  quota_limit: number
+  quota_percent: number
 }
 
 export interface MembershipEvent {

@@ -41,13 +41,14 @@ export default function UsersTable({ users, stateFilter, onFilterChange, onSelec
               <th className="px-3 py-2 font-medium">Skool ID</th>
               <th className="px-3 py-2 font-medium">Стадия</th>
               <th className="px-3 py-2 font-medium">Запросы</th>
+              <th className="px-3 py-2 font-medium">Квота / мес</th>
               <th className="px-3 py-2 font-medium">Последняя активность</th>
             </tr>
           </thead>
           <tbody>
             {!users || users.length === 0 ? (
               <tr>
-                <td colSpan={5} className="px-3 py-6 text-center text-muted-foreground">
+                <td colSpan={6} className="px-3 py-6 text-center text-muted-foreground">
                   Нет данных по фильтру
                 </td>
               </tr>
@@ -71,6 +72,20 @@ export default function UsersTable({ users, stateFilter, onFilterChange, onSelec
                   <td className="px-3 py-2">
                     {u.requests_total}
                     <span className="text-muted-foreground"> ({u.requests_today} сегодня)</span>
+                  </td>
+                  <td className="px-3 py-2">
+                    <div className="flex items-center gap-2">
+                      <div className="h-1.5 w-20 overflow-hidden rounded-full bg-muted">
+                        <div
+                          className="h-full rounded-full"
+                          style={{
+                            width: `${Math.min(u.quota_percent, 100)}%`,
+                            background: u.quota_percent >= 100 ? '#ef4444' : u.quota_percent >= 80 ? '#f59e0b' : '#22c55e',
+                          }}
+                        />
+                      </div>
+                      <span className="font-mono text-xs">{u.quota_used}/{u.quota_limit}</span>
+                    </div>
                   </td>
                   <td className="px-3 py-2 text-muted-foreground">{u.last_active_at || '—'}</td>
                 </tr>

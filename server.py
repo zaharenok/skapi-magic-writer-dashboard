@@ -110,6 +110,15 @@ SELECT
     u.last_seen_at,
     cm.first_seen_at AS joined_at,
     cm.left_at,
+    COALESCE(
+        us.custom_quota_limit,
+        CASE lower(COALESCE(us.metadata->>'plan', 'free'))
+            WHEN 'pro' THEN 500
+            WHEN 'vip' THEN 2000
+            ELSE 100
+        END,
+        100
+    ) AS quota_limit,
     CASE
         WHEN m.skool_user_id IS NOT NULL THEN 'subscribed'
         WHEN le.skool_user_id IS NOT NULL THEN 'churned'
@@ -124,7 +133,14 @@ LEFT JOIN LATERAL (
     WHERE cm2.skool_user_id = u.user_id
     ORDER BY first_seen_at DESC LIMIT 1
 ) cm ON TRUE
+LEFT JOIN user_settings us ON us.user_id = u.id
 WHERE u.user_id IS NOT NULL
+"""
+
+MONTH_USAGE_SQL = """
+SELECT user_id, COUNT(*) AS c FROM api_requests
+WHERE user_id IS NOT NULL AND created_at >= date_trunc('month', NOW())
+GROUP BY user_id
 """
 
 
@@ -161,6 +177,9 @@ async def dashboard_stats(request: Request):
         requests_today = await conn.fetchval(
             "SELECT COUNT(*) FROM api_requests WHERE created_at::date = CURRENT_DATE"
         )
+        requests_this_month = await conn.fetchval(
+            "SELECT COUNT(*) FROM api_requests WHERE created_at >= date_trunc('month', NOW())"
+        )
         made_request = await conn.fetchval(
             "SELECT COUNT(DISTINCT user_id) FROM api_requests WHERE user_id IS NOT NULL"
         )
@@ -168,6 +187,8 @@ async def dashboard_stats(request: Request):
             "SELECT user_id, COUNT(*) AS c FROM api_requests WHERE user_id IS NOT NULL GROUP BY user_id"
         )
         req_map = {r["user_id"]: r["c"] for r in req_rows}
+        month_usage = await conn.fetch(MONTH_USAGE_SQL)
+        month_map = {r["user_id"]: r["c"] for r in month_usage}
 
         daily_new = await conn.fetch(
             "SELECT created_at::date AS d, COUNT(*) AS c FROM users "
@@ -186,12 +207,17 @@ async def dashboard_stats(request: Request):
 
     conv_denom = counts["subscribed"] + counts["trial_expired"]
     conversion = round(counts["subscribed"] / conv_denom * 100, 1) if conv_denom else 0.0
+    over_quota = sum(
+        1 for r in rows if month_map.get(r["id"], 0) > (r["quota_limit"] or 100)
+    )
 
     return {
         "total_users": total,
         "made_request": made_request or 0,
         "active_24h": active_24h or 0,
         "requests_today": requests_today or 0,
+        "requests_this_month": requests_this_month or 0,
+        "users_over_quota": over_quota,
         "states": counts,
         "conversion_rate": conversion,
         "mrr_estimate": round(counts["subscribed"] * COMMUNITY_PRICE, 2),
@@ -260,6 +286,8 @@ async def dashboard_users(
             "WHERE user_id IS NOT NULL GROUP BY user_id"
         )
         req_map = {r["user_id"]: {"total": r["c"], "last": r["last"]} for r in req_rows}
+        month_rows = await conn.fetch(MONTH_USAGE_SQL)
+        month_map = {r["user_id"]: r["c"] for r in month_rows}
         today_rows = await conn.fetch(
             "SELECT user_id, COUNT(*) AS c FROM api_requests "
             "WHERE created_at::date = CURRENT_DATE GROUP BY user_id"
@@ -268,6 +296,8 @@ async def dashboard_users(
 
     users = []
     for r in rows:
+        quota_used = month_map.get(r["id"], 0)
+        quota_limit = r["quota_limit"] or 100
         users.append({
             "id": r["id"],
             "skool_user_id": r["skool_user_id"],
@@ -282,6 +312,9 @@ async def dashboard_users(
             ),
             "requests_today": today_map.get(r["id"], 0),
             "requests_total": req_map.get(r["id"], {}).get("total", 0),
+            "quota_used": quota_used,
+            "quota_limit": quota_limit,
+            "quota_percent": round(quota_used / quota_limit * 100, 1) if quota_limit else 0,
         })
     return {"users": users, "total": len(users)}
 

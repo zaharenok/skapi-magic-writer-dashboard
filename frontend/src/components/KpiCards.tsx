@@ -55,6 +55,13 @@ export default function KpiCards({ stats, activeState, onSelectState }: Props) {
         </div>
         <div className="mt-1 text-xs text-muted-foreground">платный gate</div>
       </div>
+      <div className="rounded-xl border border-border bg-card p-4">
+        <div className="text-xs text-muted-foreground">Запросы за месяц</div>
+        <div className="mt-1 text-2xl font-semibold">{fmt(stats.requests_this_month)}</div>
+        <div className="mt-1 text-xs text-muted-foreground">
+          сверх квоты: <span className={stats.users_over_quota > 0 ? 'text-red-500' : ''}>{fmt(stats.users_over_quota)}</span>
+        </div>
+      </div>
 
       {STATE_ORDER.map((s) => (
         <button
