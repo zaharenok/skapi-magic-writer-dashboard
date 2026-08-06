@@ -1,4 +1,3 @@
-@import '@astryxdesign/core/tailwind-theme.css' layer(astryx);
 @tailwind base;
 @tailwind components;
 @tailwind utilities;

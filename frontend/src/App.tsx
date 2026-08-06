@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { Theme } from '@astryxdesign/core'
 import { neutralTheme } from '@astryxdesign/theme-neutral/built'
-import { Dashboard } from '@/components/Dashboard'
+import Dashboard from '@/components/Dashboard'
 
 export default function App() {
   const [isDark, setIsDark] = useState(
