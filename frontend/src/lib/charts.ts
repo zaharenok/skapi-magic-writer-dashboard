@@ -1,9 +1,11 @@
 import {
+  BarController,
   BarElement,
   CategoryScale,
   Chart as ChartJS,
   Filler,
   Legend,
+  LineController,
   LinearScale,
   LineElement,
   PointElement,
@@ -11,6 +13,8 @@ import {
 } from 'chart.js'
 
 ChartJS.register(
+  BarController,
+  LineController,
   CategoryScale,
   LinearScale,
   BarElement,

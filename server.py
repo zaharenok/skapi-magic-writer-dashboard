@@ -248,9 +248,9 @@ async def dashboard_users(
         return {"error": "DATABASE_URL not set"}
 
     state = state.strip().lower()
-    where = "WHERE u.user_id IS NOT NULL"
+    where = ""
     if state in ("trial", "subscribed", "trial_expired", "churned"):
-        where += f" AND state = '{state}'"  # state — производный алиас в том же SELECT? нет — оборачиваем
+        where = f"WHERE state = '{state}'"
 
     sql = f"SELECT * FROM ({STATE_SQL}) t {where} ORDER BY t.created_at DESC LIMIT $2 OFFSET $3"
     async with pool.acquire() as conn:
@@ -273,7 +273,7 @@ async def dashboard_users(
             "skool_user_id": r["skool_user_id"],
             "display_name": r["display_name"] or r["skool_user_id"],
             "created_at": to_local_str(r["created_at"]),
-            "last_active_at": to_local_str(r["last_active_at"]),
+            "last_active_at": to_local_str(r["last_seen_at"]),
             "joined_at": to_local_str(r["joined_at"]),
             "left_at": to_local_str(r["left_at"]),
             "state": r["state"],
