@@ -134,7 +134,6 @@ LEFT JOIN LATERAL (
     ORDER BY first_seen_at DESC LIMIT 1
 ) cm ON TRUE
 LEFT JOIN user_settings us ON us.user_id = u.id
-WHERE u.user_id IS NOT NULL
 """
 
 MONTH_USAGE_SQL = """
@@ -211,7 +210,7 @@ async def dashboard_stats(request: Request):
         scheduled = {
             "total": sum(sched_map.values()),
             "pending": sched_map.get("pending", 0),
-            "sent": sched_map.get("sent", 0),
+            "published": sched_map.get("published", 0),
             "failed": sched_map.get("failed", 0),
         }
 

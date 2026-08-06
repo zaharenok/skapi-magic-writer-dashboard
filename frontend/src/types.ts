@@ -11,7 +11,7 @@ export interface DashboardStats {
   requests_today: number
   requests_this_month: number
   users_over_quota: number
-  scheduled_posts: { total: number; pending: number; sent: number; failed: number }
+  scheduled_posts: { total: number; pending: number; published: number; failed: number }
   states: Record<UserState, number>
   conversion_rate: number
   mrr_estimate: number

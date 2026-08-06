@@ -67,7 +67,7 @@ export default function KpiCards({ stats, activeState, onSelectState }: Props) {
         <div className="mt-1 text-2xl font-semibold">{fmt(stats.scheduled_posts.total)}</div>
         <div className="mt-1 flex gap-2 text-xs">
           <span className="text-blue-500">{fmt(stats.scheduled_posts.pending)} готовятся</span>
-          <span className="text-green-600 dark:text-green-400">{fmt(stats.scheduled_posts.sent)} опубликовано</span>
+          <span className="text-green-600 dark:text-green-400">{fmt(stats.scheduled_posts.published)} опубликовано</span>
           <span className={stats.scheduled_posts.failed > 0 ? 'text-red-500' : ''}>{fmt(stats.scheduled_posts.failed)} ошибок</span>
         </div>
       </div>
