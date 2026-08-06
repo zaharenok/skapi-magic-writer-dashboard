@@ -204,6 +204,16 @@ async def dashboard_stats(request: Request):
             "WHERE detected_at >= NOW() - INTERVAL '90 days' "
             "GROUP BY detected_at::date, event_type ORDER BY d"
         )
+        sched_rows = await conn.fetch(
+            "SELECT status, COUNT(*) AS c FROM scheduled_posts GROUP BY status"
+        )
+        sched_map = {r["status"]: r["c"] for r in sched_rows}
+        scheduled = {
+            "total": sum(sched_map.values()),
+            "pending": sched_map.get("pending", 0),
+            "sent": sched_map.get("sent", 0),
+            "failed": sched_map.get("failed", 0),
+        }
 
     conv_denom = counts["subscribed"] + counts["trial_expired"]
     conversion = round(counts["subscribed"] / conv_denom * 100, 1) if conv_denom else 0.0
@@ -218,6 +228,7 @@ async def dashboard_stats(request: Request):
         "requests_today": requests_today or 0,
         "requests_this_month": requests_this_month or 0,
         "users_over_quota": over_quota,
+        "scheduled_posts": scheduled,
         "states": counts,
         "conversion_rate": conversion,
         "mrr_estimate": round(counts["subscribed"] * COMMUNITY_PRICE, 2),
