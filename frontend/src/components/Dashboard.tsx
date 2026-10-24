@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import type { DashboardUser, UserState, UsersFilter } from '../types'
-import { useDashboardData, useUsers, useUserDetail, usePosts, useGroupInfo, adjustPosts, setBanned, setComp } from '../hooks/useDashboard'
+import { useDashboardData, useSettings, useUsers, useUserDetail, usePosts, useGroupInfo, adjustPosts, setBanned, setComp } from '../hooks/useDashboard'
 import KpiCards from './KpiCards'
 import FunnelChart from './FunnelChart'
 import DailyChart from './DailyChart'
