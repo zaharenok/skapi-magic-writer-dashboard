@@ -26,8 +26,8 @@ export default function PostsTable({ posts, onOpenUser }: Props) {
           <thead className="sticky top-0 bg-card text-left text-xs text-muted-foreground">
             <tr>
               <th className="px-3 py-2 font-medium">Статус</th>
+              <th className="px-3 py-2 font-medium">Автор</th>
               <th className="px-3 py-2 font-medium">Заголовок</th>
-              <th className="px-3 py-2 font-medium">Группа</th>
               <th className="px-3 py-2 font-medium">Язык</th>
               <th className="px-3 py-2 font-medium">Время</th>
               <th className="px-3 py-2 font-medium">Ссылка</th>
@@ -47,7 +47,7 @@ export default function PostsTable({ posts, onOpenUser }: Props) {
                   <tr
                     key={p.id}
                     className="cursor-pointer border-t border-border/50 transition-colors hover:bg-accent/60"
-                    title={`Автор: ${p.user_id} — клик откроет карточку`}
+                    title={`Автор: ${p.author_name || p.user_id} — клик откроет карточку`}
                     onClick={() => onOpenUser?.(p.user_id)}
                   >
                     <td className="px-3 py-2">
@@ -59,10 +59,21 @@ export default function PostsTable({ posts, onOpenUser }: Props) {
                         {st.label}
                       </span>
                     </td>
+                    <td className="px-3 py-2">
+                      <div className="flex items-center gap-2" title={p.user_id}>
+                        {p.author_avatar ? (
+                          <img src={p.author_avatar} alt="" className="h-6 w-6 shrink-0 rounded-full border border-border" />
+                        ) : (
+                          <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-muted text-[10px]">
+                            {(p.author_name || p.user_id || '?')[0].toUpperCase()}
+                          </div>
+                        )}
+                        <span className="max-w-[140px] truncate text-xs">{p.author_name || p.author_username || '—'}</span>
+                      </div>
+                    </td>
                     <td className="max-w-[280px] truncate px-3 py-2" title={p.title}>
                       {p.title || '—'}
                     </td>
-                    <td className="px-3 py-2 font-mono text-xs">{p.community_slug || '—'}</td>
                     <td className="px-3 py-2 text-xs uppercase">{p.language || '—'}</td>
                     <td className="px-3 py-2 text-xs text-muted-foreground">
                       {p.status === 'published' ? p.published_at : p.scheduled_for}

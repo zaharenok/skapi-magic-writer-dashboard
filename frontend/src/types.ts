@@ -147,6 +147,9 @@ export interface AdminAction {
 export interface ScheduledPostRow {
   id: number
   user_id: string
+  author_name?: string | null
+  author_username?: string | null
+  author_avatar?: string | null
   title: string
   community_slug: string
   language: string

@@ -710,9 +710,19 @@ async def posts_feed(request: Request, limit: int = 50):
         return {"error": "DATABASE_URL not set"}
     async with pool.acquire() as conn:
         rows = await conn.fetch(
-            "SELECT id, user_id, COALESCE(NULLIF(title, ''), LEFT(content, 80)) AS title, "
-            "community_slug, language, status, scheduled_for, published_at, published_url, error_message "
-            "FROM scheduled_posts ORDER BY created_at DESC LIMIT $1",
+            """
+            SELECT s.id, s.user_id, COALESCE(NULLIF(s.title, ''), LEFT(s.content, 80)) AS title,
+                   s.community_slug, s.language, s.status, s.scheduled_for, s.published_at,
+                   s.published_url, s.error_message,
+                   m.name AS author_name, m.username AS author_username, m.avatar_url AS author_avatar
+            FROM scheduled_posts s
+            LEFT JOIN LATERAL (
+                SELECT c.name, c.username, c.avatar_url FROM community_members c
+                WHERE c.skool_user_id = s.user_id
+                ORDER BY c.last_seen_at DESC NULLS LAST LIMIT 1
+            ) m ON TRUE
+            ORDER BY s.created_at DESC LIMIT $1
+            """,
             min(limit, 200),
         )
     return {
@@ -720,6 +730,9 @@ async def posts_feed(request: Request, limit: int = 50):
             {
                 "id": r["id"],
                 "user_id": r["user_id"],
+                "author_name": r["author_name"],
+                "author_username": r["author_username"],
+                "author_avatar": r["author_avatar"],
                 "title": r["title"],
                 "community_slug": r["community_slug"],
                 "language": r["language"],
