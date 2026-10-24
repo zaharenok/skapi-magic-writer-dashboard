@@ -9,6 +9,7 @@ import UsersTable from './UsersTable'
 import EventFeed from './EventFeed'
 import SyncPanel from './SyncPanel'
 import PostsTable from './PostsTable'
+import DailyBreakdown from './DailyBreakdown'
 import GroupInfoCard from './GroupInfoCard'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs'
 import { Moon, Sun } from 'lucide-react'
@@ -317,6 +318,7 @@ export default function Dashboard({ isDark, onToggleTheme }: Props) {
                 <DailyChart stats={stats.data} dark={isDark} />
               </div>
             </div>
+            <DailyBreakdown daily={stats.data?.daily} />
             <div className="rounded-xl border border-border bg-card p-4">
               <div className="mb-2 text-sm font-medium">Членство сообщества во времени</div>
               <MembershipChart stats={stats.data} dark={isDark} />

@@ -142,6 +142,16 @@ def _local_now() -> str:
     return datetime.now(_TZ).strftime("%d.%m %H:%M")
 
 
+DEFAULT_EXCLUDE = "04b02f5028534735ae60bf414465b766"  # Oleg (владелец) — не учитывать в статистике
+
+
+async def get_exclude_ids() -> list[str]:
+    """skool_user_id для исключения из статистики: настройка exclude_user_ids (csv), иначе владелец."""
+    saved = await get_saved_setting("exclude_user_ids")
+    raw = saved if saved is not None else DEFAULT_EXCLUDE
+    return [s.strip() for s in raw.split(",") if s.strip()]
+
+
 # ═══════════════════════════════════════════════════════
 # SQL — денежные стадии (единый источник, как в app/community_membership.py)
 # ═══════════════════════════════════════════════════════
@@ -152,7 +162,8 @@ WITH m AS (
     WHERE is_current = TRUE AND community_slug = $1
 ),
 le AS (
-    SELECT DISTINCT skool_user_id FROM membership_events WHERE event_type = 'left'
+    SELECT DISTINCT skool_user_id FROM membership_events
+    WHERE event_type = 'left' AND community_slug = $1
 ),
 comp AS (
     SELECT skool_user_id FROM community_members
@@ -170,7 +181,7 @@ agg AS (
         MIN(created_at) AS created_at,
         MAX(last_seen_at) AS last_seen_at
     FROM users
-    WHERE user_id IS NOT NULL AND user_id <> ''
+    WHERE user_id IS NOT NULL AND user_id <> '' AND user_id <> ALL($2::text[])
     GROUP BY user_id
 ),
 mem AS (
@@ -237,7 +248,7 @@ async def health(request: Request):
 
 
 @app.get("/api/dashboard-stats")
-async def dashboard_stats(request: Request):
+async def dashboard_stats(request: Request, days: int = 30):
     """Агрегированные KPI: юзеры, запросы, стадии, конверсия, MRR, серии."""
     if not _is_allowed(_client_ip(request)):
         return JSONResponse(status_code=404, content={"detail": "Not Found"})
@@ -246,8 +257,9 @@ async def dashboard_stats(request: Request):
         return {"error": "DATABASE_URL not set"}
 
     slug = await get_community_slug()
+    exclude = await get_exclude_ids()
     async with pool.acquire() as conn:
-        rows = await conn.fetch(STATE_SQL, slug)
+        rows = await conn.fetch(STATE_SQL, slug, exclude)
         total = len(rows)
         counts = {"trial": 0, "subscribed": 0, "trial_expired": 0, "churned": 0}
         for r in rows:
@@ -256,16 +268,27 @@ async def dashboard_stats(request: Request):
         active_24h = await conn.fetchval(
             "SELECT COUNT(DISTINCT u2.user_id) FROM api_requests ar "
             "JOIN users u2 ON u2.id = ar.user_id "
-            "WHERE ar.created_at > NOW() - INTERVAL '24 hours'"
+            "WHERE ar.created_at > NOW() - INTERVAL '24 hours' "
+            "AND u2.user_id <> ALL($1::text[])",
+            exclude,
         )
         requests_today = await conn.fetchval(
-            "SELECT COUNT(*) FROM api_requests WHERE created_at::date = CURRENT_DATE"
+            "SELECT COUNT(*) FROM api_requests ar "
+            "WHERE ar.created_at::date = CURRENT_DATE "
+            "AND NOT EXISTS (SELECT 1 FROM users u2 WHERE u2.id = ar.user_id AND u2.user_id = ANY($1::text[]))",
+            exclude,
         )
         requests_this_month = await conn.fetchval(
-            "SELECT COUNT(*) FROM api_requests WHERE created_at >= date_trunc('month', NOW())"
+            "SELECT COUNT(*) FROM api_requests ar "
+            "WHERE ar.created_at >= date_trunc('month', NOW()) "
+            "AND NOT EXISTS (SELECT 1 FROM users u2 WHERE u2.id = ar.user_id AND u2.user_id = ANY($1::text[]))",
+            exclude,
         )
         made_request = await conn.fetchval(
-            "SELECT COUNT(DISTINCT user_id) FROM api_requests WHERE user_id IS NOT NULL"
+            "SELECT COUNT(DISTINCT ar.user_id) FROM api_requests ar "
+            "JOIN users u2 ON u2.id = ar.user_id "
+            "WHERE ar.user_id IS NOT NULL AND u2.user_id <> ALL($1::text[])",
+            exclude,
         )
         req_rows = await conn.fetch(
             "SELECT user_id, COUNT(*) AS c FROM api_requests WHERE user_id IS NOT NULL GROUP BY user_id"
@@ -277,17 +300,46 @@ async def dashboard_stats(request: Request):
         daily_new = await conn.fetch(
             "SELECT created_at::date AS d, COUNT(DISTINCT user_id) AS c FROM users "
             "WHERE created_at >= NOW() - INTERVAL '30 days' AND user_id IS NOT NULL "
-            "GROUP BY created_at::date ORDER BY d"
+            "AND user_id <> ALL($1::text[]) "
+            "GROUP BY created_at::date ORDER BY d",
+            exclude,
         )
         joined_per_day = await conn.fetch(
             "SELECT detected_at::date AS d, COUNT(*) AS c FROM membership_events "
-            "WHERE event_type = 'joined' AND detected_at >= NOW() - INTERVAL '30 days' "
-            "GROUP BY detected_at::date ORDER BY d"
+            "WHERE event_type = 'joined' AND community_slug = $1 "
+            "AND detected_at >= NOW() - INTERVAL '30 days' "
+            "GROUP BY detected_at::date ORDER BY d",
+            slug,
         )
         members_over_time = await conn.fetch(
             "SELECT detected_at::date AS d, event_type, COUNT(*) AS c FROM membership_events "
-            "WHERE detected_at >= NOW() - INTERVAL '90 days' "
-            "GROUP BY detected_at::date, event_type ORDER BY d"
+            "WHERE community_slug = $1 AND detected_at >= NOW() - INTERVAL '90 days' "
+            "GROUP BY detected_at::date, event_type ORDER BY d",
+            slug,
+        )
+        daily_rows = await conn.fetch(
+            """
+            SELECT d::date AS day,
+                (SELECT COUNT(*) FROM users u WHERE u.created_at::date = d::date
+                   AND u.user_id IS NOT NULL AND u.user_id <> ALL($2::text[])) AS new_users,
+                (SELECT COUNT(*) FROM api_requests ar WHERE ar.created_at::date = d::date
+                   AND NOT EXISTS (SELECT 1 FROM users u2 WHERE u2.id = ar.user_id AND u2.user_id = ANY($2::text[]))) AS requests,
+                (SELECT COUNT(*) FROM api_requests ar WHERE ar.created_at::date = d::date
+                   AND ar.endpoint LIKE '/ai%'
+                   AND NOT EXISTS (SELECT 1 FROM users u2 WHERE u2.id = ar.user_id AND u2.user_id = ANY($2::text[]))) AS ai_requests,
+                (SELECT COUNT(*) FROM scheduled_posts sp WHERE sp.status = 'published'
+                   AND sp.published_at::date = d::date
+                   AND (sp.user_id IS NULL OR sp.user_id <> ALL($2::text[]))) AS posts_published,
+                (SELECT COUNT(*) FROM membership_events e WHERE e.community_slug = $1
+                   AND e.event_type = 'joined' AND e.detected_at::date = d::date) AS joined,
+                (SELECT COUNT(*) FROM membership_events e WHERE e.community_slug = $1
+                   AND e.event_type = 'left' AND e.detected_at::date = d::date) AS left
+            FROM generate_series(CURRENT_DATE - ($3::int - 1), CURRENT_DATE, INTERVAL '1 day') d
+            ORDER BY day DESC
+            """,
+            slug,
+            exclude,
+            max(7, min(int(days), 90)),
         )
         sched_rows = await conn.fetch(
             "SELECT status, COUNT(*) AS c FROM scheduled_posts GROUP BY status"
@@ -326,6 +378,18 @@ async def dashboard_stats(request: Request):
         "trial_posts": TRIAL_POSTS_LIMIT,
         "community_price": COMMUNITY_PRICE,
         "community_slug": slug,
+        "daily": [
+            {
+                "date": str(r["day"]),
+                "new_users": r["new_users"],
+                "requests": r["requests"],
+                "ai_requests": r["ai_requests"],
+                "posts_published": r["posts_published"],
+                "joined": r["joined"],
+                "left": r["left"],
+            }
+            for r in daily_rows
+        ],
     }
 
 
@@ -339,12 +403,16 @@ async def funnel(request: Request):
         return {"error": "DATABASE_URL not set"}
     slug = await get_community_slug()
     async with pool.acquire() as conn:
-        rows = await conn.fetch(STATE_SQL, slug)
+        exclude = await get_exclude_ids()
+        rows = await conn.fetch(STATE_SQL, slug, exclude)
         counts = {"trial": 0, "subscribed": 0, "trial_expired": 0, "churned": 0}
         for r in rows:
             counts[r["state"]] += 1
         made_request = await conn.fetchval(
-            "SELECT COUNT(DISTINCT user_id) FROM api_requests WHERE user_id IS NOT NULL"
+            "SELECT COUNT(DISTINCT ar.user_id) FROM api_requests ar "
+            "JOIN users u2 ON u2.id = ar.user_id "
+            "WHERE ar.user_id IS NOT NULL AND u2.user_id <> ALL($1::text[])",
+            await get_exclude_ids(),
         )
     return {
         "total": len(rows),
@@ -389,10 +457,11 @@ async def dashboard_users(
         )
     where = ("WHERE " + " AND ".join(conds)) if conds else ""
 
-    sql = f"SELECT * FROM ({STATE_SQL}) t {where} ORDER BY t.created_at DESC LIMIT $2 OFFSET $3"
     slug = await get_community_slug()
+    exclude = await get_exclude_ids()
+    sql = f"SELECT * FROM ({STATE_SQL}) t {where} ORDER BY t.created_at DESC LIMIT $3 OFFSET $4"
     async with pool.acquire() as conn:
-        rows = await conn.fetch(sql, slug, limit, offset)
+        rows = await conn.fetch(sql, slug, exclude, limit, offset)
         req_rows = await conn.fetch(
             "SELECT user_id, COUNT(*) AS c, MAX(created_at) AS last FROM api_requests "
             "WHERE user_id IS NOT NULL GROUP BY user_id"
@@ -708,6 +777,7 @@ async def posts_feed(request: Request, limit: int = 50):
     pool = await get_pool()
     if pool is None:
         return {"error": "DATABASE_URL not set"}
+    slug = await get_community_slug()
     async with pool.acquire() as conn:
         rows = await conn.fetch(
             """
@@ -718,12 +788,13 @@ async def posts_feed(request: Request, limit: int = 50):
             FROM scheduled_posts s
             LEFT JOIN LATERAL (
                 SELECT c.name, c.username, c.avatar_url FROM community_members c
-                WHERE c.skool_user_id = s.user_id
+                WHERE c.skool_user_id = s.user_id AND c.community_slug = $2
                 ORDER BY c.last_seen_at DESC NULLS LAST LIMIT 1
             ) m ON TRUE
             ORDER BY s.created_at DESC LIMIT $1
             """,
             min(limit, 200),
+            slug,
         )
     return {
         "posts": [
@@ -756,6 +827,7 @@ async def membership_events(request: Request, limit: int = 30):
     if pool is None:
         return {"error": "DATABASE_URL not set"}
     async with pool.acquire() as conn:
+        slug = await get_community_slug()
         rows = await conn.fetch(
             """
             SELECT e.id, e.community_slug, e.skool_user_id, e.event_type, e.detected_at,
@@ -764,12 +836,14 @@ async def membership_events(request: Request, limit: int = 30):
             FROM membership_events e
             LEFT JOIN LATERAL (
                 SELECT c.name, c.username FROM community_members c
-                WHERE c.skool_user_id = e.skool_user_id
+                WHERE c.skool_user_id = e.skool_user_id AND c.community_slug = $2
                 ORDER BY c.last_seen_at DESC NULLS LAST LIMIT 1
             ) m ON TRUE
+            WHERE e.community_slug = $2
             ORDER BY e.detected_at DESC LIMIT $1
             """,
             limit,
+            slug,
         )
     return {
         "events": [
@@ -796,7 +870,11 @@ async def sync_status(request: Request):
     if pool is None:
         return {"error": "DATABASE_URL not set"}
     async with pool.acquire() as conn:
-        row = await conn.fetchrow("SELECT * FROM sync_runs ORDER BY started_at DESC LIMIT 1")
+        slug = await get_community_slug()
+        row = await conn.fetchrow(
+            "SELECT * FROM sync_runs WHERE community_slug = $1 ORDER BY started_at DESC LIMIT 1",
+            slug,
+        )
     if row is None:
         return {"sync": None}
     return {

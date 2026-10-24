@@ -23,6 +23,17 @@ export interface DashboardStats {
   trial_posts: number
   community_price: number
   community_slug: string
+  daily?: DailyStat[]
+}
+
+export interface DailyStat {
+  date: string
+  new_users: number
+  requests: number
+  ai_requests: number
+  posts_published: number
+  joined: number
+  left: number
 }
 
 export interface Funnel {
