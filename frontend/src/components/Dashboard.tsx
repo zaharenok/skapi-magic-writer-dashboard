@@ -296,7 +296,7 @@ export default function Dashboard({ isDark, onToggleTheme }: Props) {
         </div>
       </header>
 
-      <main className="mx-auto max-w-7xl px-4 py-4">
+      <main className="mx-auto w-full max-w-screen-2xl px-6 py-4">
         <Tabs value={tab} onValueChange={setTab}>
           <TabsList>
             <TabsTrigger value="overview">Обзор</TabsTrigger>
