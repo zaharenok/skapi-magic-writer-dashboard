@@ -254,7 +254,9 @@ async def dashboard_stats(request: Request):
             counts[r["state"]] += 1
 
         active_24h = await conn.fetchval(
-            "SELECT COUNT(*) FROM api_requests WHERE created_at > NOW() - INTERVAL '24 hours'"
+            "SELECT COUNT(DISTINCT u2.user_id) FROM api_requests ar "
+            "JOIN users u2 ON u2.id = ar.user_id "
+            "WHERE ar.created_at > NOW() - INTERVAL '24 hours'"
         )
         requests_today = await conn.fetchval(
             "SELECT COUNT(*) FROM api_requests WHERE created_at::date = CURRENT_DATE"
@@ -375,7 +377,11 @@ async def dashboard_users(
     if state in ("trial", "subscribed", "trial_expired", "churned"):
         conds.append(f"state = '{state}'")
     if active_hours > 0:
-        conds.append(f"last_seen_at >= NOW() - INTERVAL '{min(int(active_hours), 720)} hours'")
+        conds.append(
+            f"EXISTS (SELECT 1 FROM api_requests ar JOIN users u2 ON u2.id = ar.user_id "
+            f"WHERE u2.user_id = t.skool_user_id "
+            f"AND ar.created_at >= NOW() - INTERVAL '{min(int(active_hours), 720)} hours')"
+        )
     if has_requests:
         conds.append(
             "EXISTS (SELECT 1 FROM api_requests ar JOIN users u2 ON u2.id = ar.user_id "
