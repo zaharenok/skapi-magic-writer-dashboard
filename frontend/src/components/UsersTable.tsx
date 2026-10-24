@@ -10,12 +10,13 @@ interface Props {
   onSelectUser: (u: DashboardUser) => void
   onAdjust: (u: DashboardUser, action: 'reset' | 'revoke' | 'bonus') => void
   onToggleBan: (u: DashboardUser) => void
+  onToggleComp: (skoolUserId: string, comp: boolean) => void
   busy: string | null
 }
 
 const FILTERS: (UserState | 'all')[] = ['all', 'trial', 'subscribed', 'trial_expired', 'churned']
 
-export default function UsersTable({ users, stateFilter, onFilterChange, onSelectUser, onAdjust, onToggleBan, busy }: Props) {
+export default function UsersTable({ users, stateFilter, onFilterChange, onSelectUser, onAdjust, onToggleBan, onToggleComp, busy }: Props) {
   return (
     <div className="rounded-xl border border-border bg-card">
       <div className="flex flex-wrap items-center gap-2 border-b border-border p-3">
@@ -65,8 +66,32 @@ export default function UsersTable({ users, stateFilter, onFilterChange, onSelec
                   onClick={() => onSelectUser(u)}
                   className="cursor-pointer border-t border-border/50 transition-colors hover:bg-accent/60"
                 >
-                  <td className="px-3 py-2">{u.display_name || '—'}</td>
-                  <td className="px-3 py-2 font-mono text-xs">{u.skool_user_id}</td>
+                  <td className="px-3 py-2">
+                    <div className="flex items-center gap-2">
+                      {u.avatar_url ? (
+                        <img src={u.avatar_url} alt="" className="h-7 w-7 shrink-0 rounded-full border border-border" />
+                      ) : (
+                        <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-muted text-xs">
+                          {(u.display_name || '?')[0].toUpperCase()}
+                        </div>
+                      )}
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-1.5">
+                          <span className="truncate">{u.display_name || '—'}</span>
+                          {u.tokens > 1 && (
+                            <span
+                              className="shrink-0 rounded-full bg-amber-500/15 px-1.5 py-0.5 text-[10px] text-amber-600 dark:text-amber-400"
+                              title="Несколько JWT-токенов (перелогины) — счётчики объединены"
+                            >
+                              ×{u.tokens}
+                            </span>
+                          )}
+                        </div>
+                        {u.username && <div className="truncate text-xs text-muted-foreground">@{u.username}</div>}
+                      </div>
+                    </div>
+                  </td>
+                  <td className="px-3 py-2 font-mono text-xs">{u.skool_user_id.slice(0, 8)}…</td>
                   <td className="px-3 py-2">
                     <span
                       className="inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-xs"
@@ -74,13 +99,21 @@ export default function UsersTable({ users, stateFilter, onFilterChange, onSelec
                     >
                       {STATE_LABELS[u.state]}
                     </span>
+                    {u.comp && (
+                      <span className="ml-1 inline-flex rounded-full bg-purple-500/20 px-2 py-0.5 text-xs text-purple-500" title="Комплимент-подписка от админа">
+                        💝
+                      </span>
+                    )}
                     {u.is_banned && (
                       <span className="ml-1 inline-flex rounded-full bg-red-500/20 px-2 py-0.5 text-xs text-red-500">
                         бан
                       </span>
                     )}
                   </td>
-                  <td className="px-3 py-2 font-mono text-xs">{u.posts_used}/{u.posts_limit}</td>
+                  <td className="px-3 py-2 font-mono text-xs">
+                    {u.posts_used}/{u.posts_limit}
+                    <span className="text-muted-foreground"> · всего {u.posts_total}</span>
+                  </td>
                   <td className="px-3 py-2">
                     {u.requests_total}
                     <span className="text-muted-foreground"> ({u.requests_today} сегодня)</span>
@@ -128,6 +161,16 @@ export default function UsersTable({ users, stateFilter, onFilterChange, onSelec
                         onClick={() => onAdjust(u, 'revoke')}
                       >
                         Отобрать
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="xs"
+                        disabled={busy === u.skool_user_id}
+                        title={u.comp ? 'Отозвать комплимент-подписку' : 'Комплимент-подписка: доступ без оплаты (мимо Skool)'}
+                        className="text-purple-500"
+                        onClick={() => onToggleComp(u.skool_user_id, !u.comp)}
+                      >
+                        {u.comp ? '💝 отозвать' : '💝 подписка'}
                       </Button>
                       <Button
                         variant={u.is_banned ? 'outline' : 'destructive'}

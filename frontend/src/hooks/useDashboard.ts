@@ -7,6 +7,7 @@ import type {
   MembershipEvent,
   Funnel,
   ScheduledPostRow,
+  GroupInfo,
   UserDetail,
   UserState,
 } from '../types'
@@ -67,6 +68,7 @@ export function useUserDetail(skoolUserId: string | null) {
   const path = skoolUserId ? `/api/users/${encodeURIComponent(skoolUserId)}` : ''
   const [data, setData] = useState<UserDetail | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [tick, setTick] = useState(0)
 
   useEffect(() => {
     if (!path) {
@@ -85,9 +87,10 @@ export function useUserDetail(skoolUserId: string | null) {
     return () => {
       cancelled = true
     }
-  }, [path])
+  }, [path, tick])
 
-  return { data, error }
+  const reload = useCallback(() => setTick((t) => t + 1), [])
+  return { data, error, reload }
 }
 
 export async function triggerSync(): Promise<{ success: boolean; error?: string }> {
@@ -152,6 +155,27 @@ export async function setBanned(
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ banned }),
+    })
+    return await res.json()
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e)
+    return { success: false, error: msg }
+  }
+}
+
+export function useGroupInfo() {
+  return usePolling<GroupInfo>('/api/group-info', 120000)
+}
+
+export async function setComp(
+  skoolUserId: string,
+  comp: boolean,
+): Promise<{ success: boolean; error?: string; comp?: boolean }> {
+  try {
+    const res = await fetch(`/api/users/${encodeURIComponent(skoolUserId)}/subscribe`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ comp }),
     })
     return await res.json()
   } catch (e) {

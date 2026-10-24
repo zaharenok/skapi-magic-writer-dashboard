@@ -1,6 +1,12 @@
 import type { MembershipEvent } from '../types'
 
-export default function EventFeed({ events }: { events: MembershipEvent[] | null }) {
+export default function EventFeed({
+  events,
+  onOpenUser,
+}: {
+  events: MembershipEvent[] | null
+  onOpenUser?: (skoolUserId: string) => void
+}) {
   if (!events) return null
   return (
     <div className="rounded-xl border border-border bg-card p-4">
@@ -12,7 +18,12 @@ export default function EventFeed({ events }: { events: MembershipEvent[] | null
           </li>
         )}
         {events.map((e) => (
-          <li key={e.id} className="flex items-center gap-2 text-sm">
+          <li
+            key={e.id}
+            className="flex cursor-pointer items-center gap-2 rounded-lg px-1 py-0.5 text-sm transition-colors hover:bg-accent"
+            title="Открыть пользователя"
+            onClick={() => onOpenUser?.(e.skool_user_id)}
+          >
             <span
               className={
                 e.event_type === 'joined'

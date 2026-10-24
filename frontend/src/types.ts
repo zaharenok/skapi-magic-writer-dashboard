@@ -36,6 +36,9 @@ export interface DashboardUser {
   id: number
   skool_user_id: string
   display_name: string
+  username: string | null
+  avatar_url: string | null
+  tokens: number
   created_at: string
   last_active_at: string
   joined_at: string | null
@@ -43,12 +46,35 @@ export interface DashboardUser {
   state: UserState
   posts_used: number
   posts_limit: number
+  posts_total: number
+  comp?: boolean
+  is_banned: boolean
   requests_today: number
   requests_total: number
   quota_used: number
   quota_limit: number
   quota_percent: number
-  is_banned: boolean
+}
+
+export interface MemberInfo {
+  name: string | null
+  username: string | null
+  avatar_url: string | null
+  profile_url: string | null
+  is_current: boolean
+  comp: boolean
+  first_seen_at: string | null
+  left_at: string | null
+}
+
+export interface UserPost {
+  id: number
+  title: string
+  status: string
+  scheduled_for: string | null
+  published_at: string | null
+  published_url: string | null
+  error: string
 }
 
 export interface MembershipEvent {
@@ -82,19 +108,32 @@ export interface DashboardSettings {
 }
 
 export interface UserDetail {
-  id: number
   skool_user_id: string
   display_name: string
-  client_id: string
+  username: string | null
+  avatar_url: string | null
+  profile_url: string | null
+  tokens: number
   created_at: string
   last_seen_at: string
   is_banned: boolean
-  membership_events: { event_type: 'joined' | 'left'; detected_at: string; community_slug: string }[]
   posts_used: number
   posts_total: number
   lang: string | null
-  admin_actions: AdminAction[]
+  member: MemberInfo | null
+  requests_total: number
+  scheduled_posts: UserPost[]
+  membership_events: { event_type: 'joined' | 'left' | 'trial_exhausted'; detected_at: string; community_slug: string }[]
   recent_requests: { endpoint: string; status_code: number; success: boolean; created_at: string }[]
+  admin_actions: AdminAction[]
+}
+
+export interface GroupInfo {
+  success?: boolean
+  slug?: string
+  checked_at?: string
+  group?: Record<string, unknown>
+  error?: string
 }
 
 export interface AdminAction {

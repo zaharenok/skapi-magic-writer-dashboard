@@ -153,16 +153,47 @@ WITH m AS (
 ),
 le AS (
     SELECT DISTINCT skool_user_id FROM membership_events WHERE event_type = 'left'
+),
+comp AS (
+    SELECT skool_user_id FROM community_members
+    WHERE comp = TRUE AND community_slug = $1
+),
+agg AS (
+    -- Дедупликация: один skool-аккаунт = несколько JWT-строк (перелогины).
+    -- Триал считается по СУММЕ постов всех токенов — как реально потрачено.
+    SELECT
+        MIN(id) AS id,
+        user_id AS skool_user_id,
+        COUNT(*) AS tokens,
+        SUM(COALESCE(posts_used, 0)) AS posts_used,
+        COALESCE(SUM(posts_total), 0) AS posts_total,
+        MIN(created_at) AS created_at,
+        MAX(last_seen_at) AS last_seen_at
+    FROM users
+    WHERE user_id IS NOT NULL AND user_id <> ''
+    GROUP BY user_id
+),
+mem AS (
+    SELECT DISTINCT ON (skool_user_id)
+        skool_user_id, username, name, avatar_url, profile_url, first_seen_at, left_at, comp
+    FROM community_members
+    WHERE community_slug = $1
+    ORDER BY skool_user_id, first_seen_at DESC
 )
 SELECT
-    u.id,
-    u.user_id AS skool_user_id,
-    u.display_name,
-    u.created_at,
-    u.last_seen_at,
-    u.posts_used,
-    cm.first_seen_at AS joined_at,
-    cm.left_at,
+    a.id,
+    a.skool_user_id,
+    COALESCE(NULLIF(mem.name, ''), NULLIF(u.display_name, ''), mem.username, a.skool_user_id) AS display_name,
+    mem.username,
+    mem.avatar_url,
+    a.tokens,
+    a.posts_used,
+    a.posts_total,
+    a.created_at,
+    a.last_seen_at,
+    mem.comp,
+    mem.first_seen_at AS joined_at,
+    mem.left_at,
     COALESCE(
         us.custom_quota_limit,
         CASE lower(COALESCE(us.metadata->>'plan', 'free'))
@@ -173,20 +204,18 @@ SELECT
         100
     ) AS quota_limit,
     CASE
-        WHEN m.skool_user_id IS NOT NULL THEN 'subscribed'
+        WHEN m.skool_user_id IS NOT NULL OR comp.skool_user_id IS NOT NULL THEN 'subscribed'
         WHEN le.skool_user_id IS NOT NULL THEN 'churned'
-        WHEN COALESCE(u.posts_used, 0) >= {TRIAL_POSTS_LIMIT} THEN 'trial_expired'
+        WHEN a.posts_used >= {TRIAL_POSTS_LIMIT} THEN 'trial_expired'
         ELSE 'trial'
     END AS state
-FROM users u
-LEFT JOIN m ON m.skool_user_id = u.user_id
-LEFT JOIN le ON le.skool_user_id = u.user_id
-LEFT JOIN LATERAL (
-    SELECT first_seen_at, left_at FROM community_members cm2
-    WHERE cm2.skool_user_id = u.user_id
-    ORDER BY first_seen_at DESC LIMIT 1
-) cm ON TRUE
-LEFT JOIN user_settings us ON us.user_id = u.id
+FROM agg a
+LEFT JOIN mem ON mem.skool_user_id = a.skool_user_id
+LEFT JOIN users u ON u.id = a.id
+LEFT JOIN m ON m.skool_user_id = a.skool_user_id
+LEFT JOIN comp ON comp.skool_user_id = a.skool_user_id
+LEFT JOIN le ON le.skool_user_id = a.skool_user_id
+LEFT JOIN user_settings us ON us.user_id = a.id
 """
 
 MONTH_USAGE_SQL = """
@@ -244,8 +273,9 @@ async def dashboard_stats(request: Request):
         month_map = {r["user_id"]: r["c"] for r in month_usage}
 
         daily_new = await conn.fetch(
-            "SELECT created_at::date AS d, COUNT(*) AS c FROM users "
-            "WHERE created_at >= NOW() - INTERVAL '30 days' GROUP BY created_at::date ORDER BY d"
+            "SELECT created_at::date AS d, COUNT(DISTINCT user_id) AS c FROM users "
+            "WHERE created_at >= NOW() - INTERVAL '30 days' AND user_id IS NOT NULL "
+            "GROUP BY created_at::date ORDER BY d"
         )
         joined_per_day = await conn.fetch(
             "SELECT detected_at::date AS d, COUNT(*) AS c FROM membership_events "
@@ -370,6 +400,10 @@ async def dashboard_users(
             "id": r["id"],
             "skool_user_id": r["skool_user_id"],
             "display_name": r["display_name"] or r["skool_user_id"],
+            "username": r["username"],
+            "avatar_url": r["avatar_url"],
+            "tokens": r["tokens"],
+            "posts_total": r["posts_total"] or 0,
             "created_at": to_local_str(r["created_at"]),
             "last_active_at": to_local_str(r["last_seen_at"]),
             "joined_at": to_local_str(r["joined_at"]),
@@ -389,18 +423,30 @@ async def dashboard_users(
 
 @app.get("/api/users/{skool_user_id}")
 async def user_detail(skool_user_id: str, request: Request):
-    """Детали пользователя: профиль, стадия, история членства, запросы."""
+    """Детали: все JWT-токены аккаунта, членство (снимок+comp), посты, запросы, аудит."""
     if not _is_allowed(_client_ip(request)):
         return JSONResponse(status_code=404, content={"detail": "Not Found"})
     pool = await get_pool()
     if pool is None:
         return {"error": "DATABASE_URL not set"}
+    slug = await get_community_slug()
     async with pool.acquire() as conn:
-        row = await conn.fetchrow(
-            "SELECT * FROM users WHERE user_id = $1", skool_user_id
+        agg = await conn.fetchrow(
+            "SELECT COUNT(*) AS tokens, SUM(COALESCE(posts_used, 0)) AS posts_used, "
+            "COALESCE(SUM(posts_total), 0) AS posts_total, MIN(created_at) AS created_at, "
+            "MAX(last_seen_at) AS last_seen_at, BOOL_OR(is_banned) AS is_banned, "
+            "(ARRAY_AGG(lang ORDER BY last_seen_at DESC NULLS LAST))[1] AS lang "
+            "FROM users WHERE user_id = $1",
+            skool_user_id,
         )
-        if row is None:
+        if agg is None or agg["tokens"] == 0:
             return JSONResponse(status_code=404, content={"detail": "User not found"})
+        member = await conn.fetchrow(
+            "SELECT name, username, avatar_url, profile_url, first_seen_at, is_current, comp, left_at "
+            "FROM community_members WHERE skool_user_id = $1 AND community_slug = $2 "
+            "ORDER BY first_seen_at DESC LIMIT 1",
+            skool_user_id, slug,
+        )
         events = await conn.fetch(
             "SELECT * FROM membership_events WHERE skool_user_id = $1 "
             "ORDER BY detected_at DESC LIMIT 50",
@@ -408,8 +454,20 @@ async def user_detail(skool_user_id: str, request: Request):
         )
         req_rows = await conn.fetch(
             "SELECT endpoint, status_code, success, created_at FROM api_requests "
-            "WHERE user_id = $1 ORDER BY created_at DESC LIMIT 50",
-            row["id"],
+            "WHERE user_id IN (SELECT id FROM users WHERE user_id = $1) "
+            "ORDER BY created_at DESC LIMIT 50",
+            skool_user_id,
+        )
+        req_total = await conn.fetchval(
+            "SELECT COUNT(*) FROM api_requests "
+            "WHERE user_id IN (SELECT id FROM users WHERE user_id = $1)",
+            skool_user_id,
+        )
+        sched_rows = await conn.fetch(
+            "SELECT id, COALESCE(NULLIF(title, ''), LEFT(content, 80)) AS title, status, "
+            "scheduled_for, published_at, published_url, error_message "
+            "FROM scheduled_posts WHERE user_id = $1 ORDER BY created_at DESC LIMIT 20",
+            skool_user_id,
         )
         admin_actions = await conn.fetch(
             "SELECT action, details, created_at FROM dashboard_admin_actions "
@@ -417,23 +475,40 @@ async def user_detail(skool_user_id: str, request: Request):
             skool_user_id,
         )
     return {
-        "id": row["id"],
-        "skool_user_id": row["user_id"],
-        "display_name": row["display_name"],
-        "client_id": row["client_id"],
-        "created_at": to_local_str(row["created_at"]),
-        "last_seen_at": to_local_str(row["last_seen_at"]),
-        "is_banned": row["is_banned"],
-        "posts_used": row["posts_used"] or 0,
-        "posts_total": row["posts_total"] or 0,
-        "lang": row["lang"],
-        "admin_actions": [
+        "skool_user_id": skool_user_id,
+        "display_name": (member["name"] if member else None) or "",
+        "username": member["username"] if member else None,
+        "avatar_url": member["avatar_url"] if member else None,
+        "profile_url": member["profile_url"] if member else None,
+        "tokens": agg["tokens"],
+        "created_at": to_local_str(agg["created_at"]),
+        "last_seen_at": to_local_str(agg["last_seen_at"]),
+        "is_banned": agg["is_banned"],
+        "posts_used": agg["posts_used"] or 0,
+        "posts_total": agg["posts_total"] or 0,
+        "lang": agg["lang"],
+        "member": {
+            "name": member["name"],
+            "username": member["username"],
+            "avatar_url": member["avatar_url"],
+            "profile_url": member["profile_url"],
+            "is_current": member["is_current"],
+            "comp": member["comp"],
+            "first_seen_at": to_local_str(member["first_seen_at"]),
+            "left_at": to_local_str(member["left_at"]),
+        } if member else None,
+        "requests_total": req_total or 0,
+        "scheduled_posts": [
             {
-                "action": a["action"],
-                "details": a["details"],
-                "created_at": to_local_str(a["created_at"]),
+                "id": s["id"],
+                "title": s["title"],
+                "status": s["status"],
+                "scheduled_for": to_local_str(s["scheduled_for"]),
+                "published_at": to_local_str(s["published_at"]),
+                "published_url": s["published_url"],
+                "error": (s["error_message"] or "")[:200],
             }
-            for a in admin_actions
+            for s in sched_rows
         ],
         "membership_events": [
             {
@@ -451,6 +526,14 @@ async def user_detail(skool_user_id: str, request: Request):
                 "created_at": to_local_str(r["created_at"]),
             }
             for r in req_rows
+        ],
+        "admin_actions": [
+            {
+                "action": a["action"],
+                "details": a["details"],
+                "created_at": to_local_str(a["created_at"]),
+            }
+            for a in admin_actions
         ],
     }
 
@@ -545,6 +628,60 @@ async def set_banned(skool_user_id: str, request: Request):
             reason if banned else "разблокировка",
         )
     return {"success": True, "is_banned": row["is_banned"]}
+
+
+@app.post("/api/users/{skool_user_id}/subscribe")
+async def set_comp_subscription(skool_user_id: str, request: Request):
+    """Комплимент-подписка без оплаты: comp=TRUE в community_members.
+    Даёт 'subscribed' и отключает ватермарк (is_current_member учитывает comp)."""
+    if not _is_allowed(_client_ip(request)):
+        return JSONResponse(status_code=404, content={"detail": "Not Found"})
+    pool = await get_pool()
+    if pool is None:
+        return {"error": "DATABASE_URL not set"}
+    body = await request.json()
+    comp = bool(body.get("comp"))
+    slug = await get_community_slug()
+    if not slug:
+        return JSONResponse(status_code=400, content={"detail": "community_slug not set"})
+    await _ensure_admin_table(pool)
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            """
+            INSERT INTO community_members (community_slug, skool_user_id, is_current, comp, last_seen_at)
+            VALUES ($1, $2, $3, $3, NOW())
+            ON CONFLICT (community_slug, skool_user_id)
+            DO UPDATE SET comp = EXCLUDED.comp, last_seen_at = NOW()
+            RETURNING comp
+            """,
+            slug, skool_user_id, comp,
+        )
+        await conn.execute(
+            "INSERT INTO dashboard_admin_actions (skool_user_id, action, details) VALUES ($1, $2, $3)",
+            skool_user_id, "comp_grant" if comp else "comp_revoke",
+            f"комплимент-подписка {'выдана' if comp else 'отозвана'} ({slug})",
+        )
+    return {"success": True, "comp": row["comp"]}
+
+
+@app.get("/api/group-info")
+async def group_info(request: Request):
+    """Публичная инфа о группе через Skapi /check-group (без JWT)."""
+    if not _is_allowed(_client_ip(request)):
+        return JSONResponse(status_code=404, content={"detail": "Not Found"})
+    slug = await get_community_slug()
+    if not slug:
+        return {"error": "community_slug not set"}
+    url = slug if slug.startswith("http") else f"https://www.skool.com/{slug}"
+    try:
+        async with httpx.AsyncClient(timeout=40) as client:
+            r = await client.post(f"{SKAPI_BASE_URL}/check-group", json={"group": url})
+        data = r.json()
+    except Exception as e:
+        return {"error": f"skapi unreachable: {e}"}
+    if "detail" in data:
+        return {"error": data["detail"], "slug": slug}
+    return {"success": True, "slug": slug, "checked_at": data.get("timestamp"), "group": data.get("result", {})}
 
 
 @app.get("/api/posts")

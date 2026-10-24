@@ -2,18 +2,23 @@ import type { ScheduledPostRow } from '../types'
 import { Card } from './ui/card'
 import { BorderBeam } from './ui/border-beam'
 
+interface Props {
+  posts: ScheduledPostRow[] | null
+  onOpenUser?: (skoolUserId: string) => void
+}
+
 const STATUS_STYLE: Record<string, { label: string; bg: string; color: string }> = {
   pending: { label: 'Ждёт', bg: '#3b82f622', color: '#3b82f6' },
   published: { label: 'Опубликован', bg: '#22c55e22', color: '#22c55e' },
   failed: { label: 'Ошибка', bg: '#ef444422', color: '#ef4444' },
 }
 
-export default function PostsTable({ posts }: { posts: ScheduledPostRow[] | null }) {
+export default function PostsTable({ posts, onOpenUser }: Props) {
   return (
     <Card>
       <div className="flex items-center justify-between border-b border-border p-3">
         <div className="text-sm font-medium">Отложенные посты</div>
-        <span className="text-xs text-muted-foreground">пайплайн публикации</span>
+        <span className="text-xs text-muted-foreground">клик по строке — автор</span>
       </div>
       <BorderBeam size={120} duration={10} />
       <div className="max-h-96 overflow-auto">
@@ -39,7 +44,12 @@ export default function PostsTable({ posts }: { posts: ScheduledPostRow[] | null
               posts.map((p) => {
                 const st = STATUS_STYLE[p.status] ?? STATUS_STYLE.pending
                 return (
-                  <tr key={p.id} className="border-t border-border/50">
+                  <tr
+                    key={p.id}
+                    className="cursor-pointer border-t border-border/50 transition-colors hover:bg-accent/60"
+                    title={`Автор: ${p.user_id} — клик откроет карточку`}
+                    onClick={() => onOpenUser?.(p.user_id)}
+                  >
                     <td className="px-3 py-2">
                       <span
                         className="inline-flex rounded-full px-2 py-0.5 text-xs"

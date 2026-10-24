@@ -9,7 +9,15 @@ const STAGES: { key: keyof Funnel; label: string }[] = [
   { key: 'subscribed', label: 'Подписались (оплата)' },
 ]
 
-export default function FunnelChart({ funnel, dark }: { funnel: Funnel | null; dark: boolean }) {
+export default function FunnelChart({
+  funnel,
+  dark,
+  onStageClick,
+}: {
+  funnel: Funnel | null
+  dark: boolean
+  onStageClick?: (stage: string) => void
+}) {
   if (!funnel) return null
   const data = {
     labels: STAGES.map((s) => s.label),
@@ -25,7 +33,22 @@ export default function FunnelChart({ funnel, dark }: { funnel: Funnel | null; d
   }
   return (
     <div className="h-64">
-      <Bar data={data} options={{ ...baseOptions(dark), indexAxis: 'y', plugins: { legend: { display: false } } }} />
+      <Bar
+        data={data}
+        options={{
+          ...baseOptions(dark),
+          indexAxis: 'y',
+          plugins: { legend: { display: false } },
+          onClick: (_e, elements) => {
+            const idx = elements[0]?.index
+            if (idx !== undefined && onStageClick) onStageClick(STAGES[idx].key)
+          },
+          onHover: (_e, elements) => {
+            const canvas = _e.native?.target as HTMLElement | undefined
+            if (canvas) canvas.style.cursor = elements.length ? 'pointer' : 'default'
+          },
+        }}
+      />
     </div>
   )
 }

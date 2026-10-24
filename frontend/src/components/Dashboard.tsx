@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import type { DashboardUser, UserState } from '../types'
-import { useDashboardData, useUsers, useUserDetail, usePosts, adjustPosts, setBanned } from '../hooks/useDashboard'
+import { useDashboardData, useUsers, useUserDetail, usePosts, useGroupInfo, adjustPosts, setBanned, setComp } from '../hooks/useDashboard'
 import KpiCards from './KpiCards'
 import FunnelChart from './FunnelChart'
 import DailyChart from './DailyChart'
@@ -9,6 +9,7 @@ import UsersTable from './UsersTable'
 import EventFeed from './EventFeed'
 import SyncPanel from './SyncPanel'
 import PostsTable from './PostsTable'
+import GroupInfoCard from './GroupInfoCard'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs'
 import { Moon, Sun } from 'lucide-react'
 
@@ -17,8 +18,26 @@ interface Props {
   onToggleTheme: () => void
 }
 
-function UserDetailDrawer({ userId, onClose }: { userId: string; onClose: () => void }) {
-  const { data, error } = useUserDetail(userId)
+function UserDetailDrawer({
+  userId,
+  onClose,
+  onComp,
+}: {
+  userId: string
+  onClose: () => void
+  onComp: (userId: string, comp: boolean) => void
+}) {
+  const { data, error, reload } = useUserDetail(userId)
+  const [compBusy, setCompBusy] = useState(false)
+  const comp = async (next: boolean) => {
+    setCompBusy(true)
+    try {
+      onComp(userId, next)
+      reload()
+    } finally {
+      setCompBusy(false)
+    }
+  }
   return (
     <div className="fixed inset-0 z-50 flex justify-end bg-black/40" onClick={onClose}>
       <div
@@ -35,19 +54,99 @@ function UserDetailDrawer({ userId, onClose }: { userId: string; onClose: () => 
         {data && (
           <div className="space-y-4 text-sm">
             <div className="rounded-xl border border-border bg-card p-3">
-              <div className="font-medium">{data.display_name || '—'}</div>
-              <div className="mt-1 font-mono text-xs text-muted-foreground">skool_id: {data.skool_user_id}</div>
-              <div className="text-xs text-muted-foreground">client_id: {data.client_id}</div>
-              <div className="text-xs text-muted-foreground">создан: {data.created_at}</div>
-              <div className="text-xs text-muted-foreground">последняя активность: {data.last_seen_at}</div>
-              <div className="text-xs text-muted-foreground">
-                постов израсходовано: {data.posts_used} · всего успешно: {data.posts_total}
-                {data.lang ? ` · язык: ${data.lang}` : ''}
+              <div className="flex items-center gap-3">
+                {data.avatar_url ? (
+                  <img src={data.avatar_url} alt="" className="h-12 w-12 rounded-full border border-border" />
+                ) : (
+                  <div className="flex h-12 w-12 items-center justify-center rounded-full bg-muted text-lg">
+                    {(data.display_name || '?')[0].toUpperCase()}
+                  </div>
+                )}
+                <div className="min-w-0">
+                  <div className="truncate font-medium">{data.display_name || '—'}</div>
+                  {data.username && <div className="truncate text-xs text-muted-foreground">@{data.username}</div>}
+                  {data.profile_url && (
+                    <a href={data.profile_url} target="_blank" rel="noreferrer" className="text-xs text-blue-500 hover:underline">
+                      профиль в Skool ↗
+                    </a>
+                  )}
+                </div>
               </div>
-              <div className="text-xs">
-                {data.is_banned ? <span className="text-red-500">забанен</span> : <span className="text-green-600 dark:text-green-400">не забанен</span>}
+              <div className="mt-2 space-y-0.5 text-xs text-muted-foreground">
+                <div className="font-mono">skool_id: {data.skool_user_id}</div>
+                <div>
+                  JWT-токенов: {data.tokens} · создан: {data.created_at} · активность: {data.last_seen_at}
+                </div>
+                <div>
+                  запросов всего: {data.requests_total} · постов израсходовано: {data.posts_used} / успешных генераций: {data.posts_total}
+                  {data.lang ? ` · язык: ${data.lang}` : ''}
+                </div>
+                <div className="flex flex-wrap items-center gap-1.5">
+                  {data.is_banned ? (
+                    <span className="rounded-full bg-red-500/15 px-2 py-0.5 text-red-500">забанен</span>
+                  ) : (
+                    <span className="rounded-full bg-green-500/15 px-2 py-0.5 text-green-600 dark:text-green-400">активен</span>
+                  )}
+                  {data.member?.comp && (
+                    <span className="rounded-full bg-purple-500/15 px-2 py-0.5 text-purple-500">комплимент</span>
+                  )}
+                  {data.member?.is_current && !data.member?.comp && (
+                    <span className="rounded-full bg-green-500/15 px-2 py-0.5 text-green-600 dark:text-green-400">член группы (Skool)</span>
+                  )}
+                  {data.member?.left_at && <span className="text-muted-foreground">вышел: {data.member.left_at}</span>}
+                </div>
               </div>
             </div>
+
+            <div className="flex gap-2">
+              {data.member?.comp ? (
+                <button
+                  disabled={compBusy}
+                  onClick={() => comp(false)}
+                  className="rounded-lg border border-border px-3 py-1.5 text-xs hover:bg-accent disabled:opacity-50"
+                >
+                  Отозвать комплимент
+                </button>
+              ) : (
+                <button
+                  disabled={compBusy}
+                  onClick={() => comp(true)}
+                  className="rounded-lg border border-purple-500/50 px-3 py-1.5 text-xs text-purple-500 hover:bg-purple-500/10 disabled:opacity-50"
+                >
+                  💝 Дать комплимент-подписку
+                </button>
+              )}
+            </div>
+
+            {data.scheduled_posts.length > 0 && (
+              <div>
+                <div className="mb-2 font-medium">Отложенные посты ({data.scheduled_posts.length})</div>
+                <ul className="space-y-1">
+                  {data.scheduled_posts.map((p) => (
+                    <li key={p.id} className="flex items-center gap-2 text-xs">
+                      <span
+                        className={
+                          p.status === 'published'
+                            ? 'rounded-full bg-green-500/15 px-2 py-0.5 text-green-600 dark:text-green-400'
+                            : p.status === 'failed'
+                              ? 'rounded-full bg-red-500/15 px-2 py-0.5 text-red-500'
+                              : 'rounded-full bg-blue-500/15 px-2 py-0.5 text-blue-500'
+                        }
+                      >
+                        {p.status === 'published' ? 'опубликован' : p.status === 'failed' ? 'ошибка' : 'ждёт'}
+                      </span>
+                      <span className="truncate">{p.title}</span>
+                      {p.published_url && (
+                        <a href={p.published_url} target="_blank" rel="noreferrer" className="ml-auto shrink-0 text-blue-500 hover:underline">
+                          ↗
+                        </a>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
             <div>
               <div className="mb-2 font-medium">История членства</div>
               {data.membership_events.length === 0 ? (
@@ -57,7 +156,7 @@ function UserDetailDrawer({ userId, onClose }: { userId: string; onClose: () => 
                   {data.membership_events.map((e, i) => (
                     <li key={i} className="flex items-center gap-2 text-xs">
                       <span className={e.event_type === 'joined' ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}>
-                        {e.event_type === 'joined' ? 'вступил' : 'вышел'}
+                        {e.event_type === 'joined' ? 'вступил' : e.event_type === 'left' ? 'вышел' : 'триал исчерпан'}
                       </span>
                       <span className="text-muted-foreground">{e.detected_at}</span>
                     </li>
@@ -108,12 +207,18 @@ function UserDetailDrawer({ userId, onClose }: { userId: string; onClose: () => 
 
 export default function Dashboard({ isDark, onToggleTheme }: Props) {
   const { stats, funnel, events, sync } = useDashboardData()
+  const groupInfo = useGroupInfo()
   const posts = usePosts()
+  const [tab, setTab] = useState('overview')
   const [stateFilter, setStateFilter] = useState<UserState | 'all'>('all')
   const users = useUsers(stateFilter)
-  const [selected, setSelected] = useState<DashboardUser | null>(null)
+  const [detailId, setDetailId] = useState<string | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
 
+  const selectState = (s: UserState | 'all') => {
+    setStateFilter(s)
+    setTab('users')
+  }
   const handleAdjust = async (u: DashboardUser, action: 'reset' | 'revoke' | 'bonus') => {
     const labels: Record<string, string> = {
       reset: `сбросить триал ${u.display_name || u.skool_user_id} (снова ${u.posts_limit} постов)?`,
@@ -144,6 +249,29 @@ export default function Dashboard({ isDark, onToggleTheme }: Props) {
     }
   }
 
+  const handleComp = async (userId: string, compNext: boolean) => {
+    if (!confirm(compNext ? 'выдать комплимент-подписку (доступ без оплаты)?' : 'отозвать комплимент-подписку?')) return
+    setBusy(userId)
+    try {
+      const r = await setComp(userId, compNext)
+      if (!r.success) alert(`Ошибка: ${r.error}`)
+    } finally {
+      setBusy(null)
+      users.reload()
+    }
+  }
+
+  const handleFunnelClick = (stage: string) => {
+    const map: Record<string, UserState | 'all'> = {
+      trial_active: 'trial',
+      subscribed: 'subscribed',
+      trial_expired: 'trial_expired',
+      churned: 'churned',
+    }
+    const f = map[stage]
+    if (f) selectState(f)
+  }
+
   return (
     <div className="min-h-screen bg-background text-foreground">
       <header className="sticky top-0 z-40 border-b border-border bg-background/90 backdrop-blur">
@@ -165,7 +293,7 @@ export default function Dashboard({ isDark, onToggleTheme }: Props) {
       </header>
 
       <main className="mx-auto max-w-7xl px-4 py-4">
-        <Tabs defaultValue="overview">
+        <Tabs value={tab} onValueChange={setTab}>
           <TabsList>
             <TabsTrigger value="overview">Обзор</TabsTrigger>
             <TabsTrigger value="users">Пользователи</TabsTrigger>
@@ -174,11 +302,11 @@ export default function Dashboard({ isDark, onToggleTheme }: Props) {
           </TabsList>
 
           <TabsContent value="overview" className="space-y-4">
-            <KpiCards stats={stats.data} activeState={stateFilter} onSelectState={setStateFilter} />
+            <KpiCards stats={stats.data} activeState={stateFilter} onSelectState={selectState} />
             <div className="grid gap-4 lg:grid-cols-3">
               <div className="rounded-xl border border-border bg-card p-4 lg:col-span-1">
-                <div className="mb-2 text-sm font-medium">Воронка</div>
-                <FunnelChart funnel={funnel.data} dark={isDark} />
+                <div className="mb-2 text-sm font-medium">Воронка (клик — список)</div>
+                <FunnelChart funnel={funnel.data} dark={isDark} onStageClick={handleFunnelClick} />
               </div>
               <div className="rounded-xl border border-border bg-card p-4 lg:col-span-2">
                 <div className="mb-2 text-sm font-medium">Новые юзеры и подписчики (30 дней)</div>
@@ -189,7 +317,7 @@ export default function Dashboard({ isDark, onToggleTheme }: Props) {
               <div className="mb-2 text-sm font-medium">Членство сообщества во времени</div>
               <MembershipChart stats={stats.data} dark={isDark} />
             </div>
-            <EventFeed events={events.data?.events ?? null} />
+            <EventFeed events={events.data?.events ?? null} onOpenUser={setDetailId} />
             {stats.error && (
               <div className="rounded-xl border border-red-500/40 bg-red-500/10 p-3 text-sm text-red-600 dark:text-red-400">
                 Ошибка загрузки данных: {stats.error}. Проверьте DATABASE_URL и что таблицы созданы (init_db / schema_membership).
@@ -202,24 +330,30 @@ export default function Dashboard({ isDark, onToggleTheme }: Props) {
               users={users.data?.users ?? null}
               stateFilter={stateFilter}
               onFilterChange={setStateFilter}
-              onSelectUser={setSelected}
+              onSelectUser={(u) => setDetailId(u.skool_user_id)}
               onAdjust={handleAdjust}
               onToggleBan={handleToggleBan}
+              onToggleComp={handleComp}
               busy={busy}
             />
           </TabsContent>
 
           <TabsContent value="posts">
-            <PostsTable posts={posts.data?.posts ?? null} />
+            <PostsTable posts={posts.data?.posts ?? null} onOpenUser={setDetailId} />
           </TabsContent>
 
           <TabsContent value="settings">
-            <SyncPanel sync={sync.data?.sync ?? null} onDone={sync.reload} />
+            <div className="space-y-4">
+              <SyncPanel sync={sync.data?.sync ?? null} onDone={sync.reload} />
+              <GroupInfoCard info={groupInfo.data} onReload={groupInfo.reload} />
+            </div>
           </TabsContent>
         </Tabs>
       </main>
 
-      {selected && <UserDetailDrawer userId={selected.skool_user_id} onClose={() => setSelected(null)} />}
+      {detailId && (
+        <UserDetailDrawer userId={detailId} onClose={() => setDetailId(null)} onComp={handleComp} />
+      )}
     </div>
   )
 }
