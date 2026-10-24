@@ -294,6 +294,7 @@ async def dashboard_stats(request: Request, days: int = 30):
             "SELECT user_id, COUNT(*) AS c FROM api_requests WHERE user_id IS NOT NULL GROUP BY user_id"
         )
         req_map = {r["user_id"]: r["c"] for r in req_rows}
+        month_usage = await conn.fetch(MONTH_USAGE_SQL)
         month_map = {r["user_id"]: r["c"] for r in month_usage}
         ai_this_month = await conn.fetchval(
             "SELECT COUNT(*) FROM ai_generations WHERE created_at >= date_trunc('month', NOW())"
