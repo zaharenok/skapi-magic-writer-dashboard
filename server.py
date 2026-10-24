@@ -11,7 +11,7 @@ Magic Writer Dashboard — FastAPI backend.
 Env:
     DATABASE_URL        — asyncpg URL общей БД (обязателен)
     PAID_COMMUNITY_SLUG — slug платного сообщества (для стадии 'subscribed')
-    TRIAL_DAYS          — длина триала (default 7)
+    TRIAL_POSTS_LIMIT   — лимит постов триала (default 5)
     COMMUNITY_PRICE     — цена подписки/мес для оценки MRR (default 0)
     SKAPI_BASE_URL      — URL Skapi backend для триггера синхронизации
     SKAPI_ADMIN_SECRET  — RATE_LIMIT_ADMIN_SECRET Skapi backend
@@ -20,7 +20,7 @@ Env:
 import ipaddress
 import os
 import zoneinfo
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from pathlib import Path
 
 import asyncpg
@@ -38,7 +38,7 @@ app = FastAPI(title="Magic Writer Dashboard")
 DISPLAY_TIMEZONE = os.getenv("DISPLAY_TIMEZONE", "Europe/Vienna")
 PORT = int(os.getenv("PORT", "8000"))
 DATABASE_URL = os.getenv("DATABASE_URL", "")
-TRIAL_DAYS = int(os.getenv("TRIAL_DAYS", "7"))
+TRIAL_POSTS_LIMIT = int(os.getenv("TRIAL_POSTS_LIMIT", "5"))
 COMMUNITY_PRICE = float(os.getenv("COMMUNITY_PRICE", "0"))
 PAID_COMMUNITY_SLUG = os.getenv("PAID_COMMUNITY_SLUG", "").strip()
 SKAPI_BASE_URL = os.getenv("SKAPI_BASE_URL", "https://api.skapi.pro").rstrip("/")
@@ -62,6 +62,58 @@ async def get_pool() -> asyncpg.Pool | None:
             return None
         _pool = await asyncpg.create_pool(DATABASE_URL, min_size=1, max_size=5)
     return _pool
+
+
+_settings_init = False
+
+
+async def _ensure_settings_table(pool: asyncpg.Pool) -> None:
+    """Создаёт таблицу настроек дашборда (идемпотентно, один раз на процесс)."""
+    global _settings_init
+    if _settings_init:
+        return
+    async with pool.acquire() as conn:
+        await conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS dashboard_settings (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+            """
+        )
+    _settings_init = True
+
+
+async def get_saved_setting(key: str) -> str | None:
+    """Значение настройки из dashboard_settings или None."""
+    pool = await get_pool()
+    if pool is None:
+        return None
+    await _ensure_settings_table(pool)
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow("SELECT value FROM dashboard_settings WHERE key = $1", key)
+    return row["value"] if row else None
+
+
+async def save_setting(key: str, value: str) -> None:
+    """Upsert настройки в dashboard_settings."""
+    pool = await get_pool()
+    if pool is None:
+        return
+    await _ensure_settings_table(pool)
+    async with pool.acquire() as conn:
+        await conn.execute(
+            "INSERT INTO dashboard_settings (key, value, updated_at) VALUES ($1, $2, CURRENT_TIMESTAMP) "
+            "ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = CURRENT_TIMESTAMP",
+            key, value,
+        )
+
+
+async def get_community_slug() -> str:
+    """Slug платного сообщества: сохранённый в БД, иначе env PAID_COMMUNITY_SLUG."""
+    saved = await get_saved_setting("community_slug")
+    return (saved or PAID_COMMUNITY_SLUG).strip()
 
 
 def _is_allowed(ip_str: str) -> bool:
@@ -108,6 +160,7 @@ SELECT
     u.display_name,
     u.created_at,
     u.last_seen_at,
+    u.posts_used,
     cm.first_seen_at AS joined_at,
     cm.left_at,
     COALESCE(
@@ -122,7 +175,7 @@ SELECT
     CASE
         WHEN m.skool_user_id IS NOT NULL THEN 'subscribed'
         WHEN le.skool_user_id IS NOT NULL THEN 'churned'
-        WHEN u.created_at < NOW() - make_interval(days => {TRIAL_DAYS}) THEN 'trial_expired'
+        WHEN COALESCE(u.posts_used, 0) >= {TRIAL_POSTS_LIMIT} THEN 'trial_expired'
         ELSE 'trial'
     END AS state
 FROM users u
@@ -163,8 +216,9 @@ async def dashboard_stats(request: Request):
     if pool is None:
         return {"error": "DATABASE_URL not set"}
 
+    slug = await get_community_slug()
     async with pool.acquire() as conn:
-        rows = await conn.fetch(STATE_SQL, PAID_COMMUNITY_SLUG)
+        rows = await conn.fetch(STATE_SQL, slug)
         total = len(rows)
         counts = {"trial": 0, "subscribed": 0, "trial_expired": 0, "churned": 0}
         for r in rows:
@@ -237,9 +291,9 @@ async def dashboard_stats(request: Request):
             {"date": str(r["d"]), "event_type": r["event_type"], "count": r["c"]}
             for r in members_over_time
         ],
-        "trial_days": TRIAL_DAYS,
+        "trial_posts": TRIAL_POSTS_LIMIT,
         "community_price": COMMUNITY_PRICE,
-        "community_slug": PAID_COMMUNITY_SLUG,
+        "community_slug": slug,
     }
 
 
@@ -251,8 +305,9 @@ async def funnel(request: Request):
     pool = await get_pool()
     if pool is None:
         return {"error": "DATABASE_URL not set"}
+    slug = await get_community_slug()
     async with pool.acquire() as conn:
-        rows = await conn.fetch(STATE_SQL, PAID_COMMUNITY_SLUG)
+        rows = await conn.fetch(STATE_SQL, slug)
         counts = {"trial": 0, "subscribed": 0, "trial_expired": 0, "churned": 0}
         for r in rows:
             counts[r["state"]] += 1
@@ -289,8 +344,9 @@ async def dashboard_users(
         where = f"WHERE state = '{state}'"
 
     sql = f"SELECT * FROM ({STATE_SQL}) t {where} ORDER BY t.created_at DESC LIMIT $2 OFFSET $3"
+    slug = await get_community_slug()
     async with pool.acquire() as conn:
-        rows = await conn.fetch(sql, PAID_COMMUNITY_SLUG, limit, offset)
+        rows = await conn.fetch(sql, slug, limit, offset)
         req_rows = await conn.fetch(
             "SELECT user_id, COUNT(*) AS c, MAX(created_at) AS last FROM api_requests "
             "WHERE user_id IS NOT NULL GROUP BY user_id"
@@ -317,9 +373,8 @@ async def dashboard_users(
             "joined_at": to_local_str(r["joined_at"]),
             "left_at": to_local_str(r["left_at"]),
             "state": r["state"],
-            "trial_end": to_local_str(
-                r["created_at"] + timedelta(days=TRIAL_DAYS) if r["created_at"] else None
-            ),
+            "posts_used": r["posts_used"] or 0,
+            "posts_limit": TRIAL_POSTS_LIMIT,
             "requests_today": today_map.get(r["id"], 0),
             "requests_total": req_map.get(r["id"], {}).get("total", 0),
             "quota_used": quota_used,
@@ -437,6 +492,37 @@ async def sync_status(request: Request):
     }
 
 
+@app.get("/api/settings")
+async def get_settings(request: Request):
+    """Сохранённые настройки дашборда (community_slug и др.)."""
+    if not _is_allowed(_client_ip(request)):
+        return JSONResponse(status_code=404, content={"detail": "Not Found"})
+    slug = await get_community_slug()
+    saved = await get_saved_setting("community_slug")
+    return {
+        "community_slug": slug,
+        "source": "saved" if saved else "env",
+        "trial_posts": TRIAL_POSTS_LIMIT,
+        "community_price": COMMUNITY_PRICE,
+    }
+
+
+@app.post("/api/settings")
+async def post_settings(request: Request):
+    """Сохранить community_slug (upsert в dashboard_settings)."""
+    if not _is_allowed(_client_ip(request)):
+        return JSONResponse(status_code=404, content={"detail": "Not Found"})
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse(status_code=400, content={"success": False, "error": "invalid JSON"})
+    slug = (body.get("community_slug") or "").strip().rstrip("/")
+    if not slug:
+        return JSONResponse(status_code=400, content={"success": False, "error": "community_slug required"})
+    await save_setting("community_slug", slug)
+    return {"success": True, "community_slug": slug, "source": "saved"}
+
+
 @app.post("/api/sync-trigger")
 async def sync_trigger(request: Request):
     """Проксирует ручной запуск синхронизации в Skapi backend."""
@@ -444,10 +530,13 @@ async def sync_trigger(request: Request):
         return JSONResponse(status_code=404, content={"detail": "Not Found"})
     if not SKAPI_ADMIN_SECRET:
         return {"success": False, "error": "SKAPI_ADMIN_SECRET not configured"}
+    slug = await get_community_slug()
+    if not slug:
+        return {"success": False, "error": "community slug not configured — укажите slug в панели синхронизации"}
     async with httpx.AsyncClient(timeout=180) as client:
         resp = await client.post(
             f"{SKAPI_BASE_URL}/admin/sync-community-members",
-            params={"admin_key": SKAPI_ADMIN_SECRET},
+            params={"admin_key": SKAPI_ADMIN_SECRET, "community_slug": slug},
         )
     try:
         return {"success": resp.status_code == 200, "result": resp.json()}

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import type {
+  DashboardSettings,
   DashboardStats,
   DashboardUser,
   Funnel,
@@ -93,6 +94,26 @@ export async function triggerSync(): Promise<{ success: boolean; error?: string 
     const res = await fetch('/api/sync-trigger', { method: 'POST' })
     const json = await res.json()
     return json
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e)
+    return { success: false, error: msg }
+  }
+}
+
+export function useSettings() {
+  return usePolling<DashboardSettings>('/api/settings', 30000)
+}
+
+export async function saveSettings(
+  communitySlug: string
+): Promise<{ success: boolean; error?: string; community_slug?: string }> {
+  try {
+    const res = await fetch('/api/settings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ community_slug: communitySlug }),
+    })
+    return await res.json()
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e)
     return { success: false, error: msg }

@@ -38,7 +38,7 @@ export default function KpiCards({ stats, activeState, onSelectState }: Props) {
         <div className="text-xs text-muted-foreground">Конверсия trial → подписка</div>
         <div className="mt-1 text-2xl font-semibold">{stats.conversion_rate}%</div>
         <div className="mt-1 text-xs text-muted-foreground">
-          триал {stats.trial_days} дней
+          лимит триала: {stats.trial_posts} постов
         </div>
       </div>
       <div className="rounded-xl border border-border bg-card p-4">

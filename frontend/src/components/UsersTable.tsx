@@ -40,6 +40,7 @@ export default function UsersTable({ users, stateFilter, onFilterChange, onSelec
               <th className="px-3 py-2 font-medium">Имя</th>
               <th className="px-3 py-2 font-medium">Skool ID</th>
               <th className="px-3 py-2 font-medium">Стадия</th>
+              <th className="px-3 py-2 font-medium">Посты</th>
               <th className="px-3 py-2 font-medium">Запросы</th>
               <th className="px-3 py-2 font-medium">Квота / мес</th>
               <th className="px-3 py-2 font-medium">Последняя активность</th>
@@ -48,7 +49,7 @@ export default function UsersTable({ users, stateFilter, onFilterChange, onSelec
           <tbody>
             {!users || users.length === 0 ? (
               <tr>
-                <td colSpan={6} className="px-3 py-6 text-center text-muted-foreground">
+                <td colSpan={7} className="px-3 py-6 text-center text-muted-foreground">
                   Нет данных по фильтру
                 </td>
               </tr>
@@ -69,6 +70,7 @@ export default function UsersTable({ users, stateFilter, onFilterChange, onSelec
                       {STATE_LABELS[u.state]}
                     </span>
                   </td>
+                  <td className="px-3 py-2 font-mono text-xs">{u.posts_used}/{u.posts_limit}</td>
                   <td className="px-3 py-2">
                     {u.requests_total}
                     <span className="text-muted-foreground"> ({u.requests_today} сегодня)</span>

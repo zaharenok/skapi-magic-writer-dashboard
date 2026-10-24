@@ -18,7 +18,7 @@ export interface DashboardStats {
   daily_new_users: Record<string, number>
   daily_new_subscribers: Record<string, number>
   members_over_time: { date: string; event_type: 'joined' | 'left'; count: number }[]
-  trial_days: number
+  trial_posts: number
   community_price: number
   community_slug: string
 }
@@ -41,7 +41,8 @@ export interface DashboardUser {
   joined_at: string | null
   left_at: string | null
   state: UserState
-  trial_end: string | null
+  posts_used: number
+  posts_limit: number
   requests_today: number
   requests_total: number
   quota_used: number
@@ -70,6 +71,13 @@ export interface SyncRun {
   left_count: number
   error: string | null
   triggered_by: string
+}
+
+export interface DashboardSettings {
+  community_slug: string
+  source: 'saved' | 'env'
+  trial_posts: number
+  community_price: number
 }
 
 export interface UserDetail {

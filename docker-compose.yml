@@ -13,7 +13,7 @@ services:
       DISPLAY_TIMEZONE: ${DISPLAY_TIMEZONE:-Europe/Vienna}
       # Монетизация
       PAID_COMMUNITY_SLUG: ${PAID_COMMUNITY_SLUG}
-      TRIAL_DAYS: ${TRIAL_DAYS:-7}
+      TRIAL_POSTS_LIMIT: ${TRIAL_POSTS_LIMIT:-5}
       COMMUNITY_PRICE: ${COMMUNITY_PRICE:-0}
       # Триггер синхронизации → Skapi backend
       SKAPI_BASE_URL: ${SKAPI_BASE_URL:-https://api.skapi.pro}
