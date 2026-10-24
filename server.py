@@ -18,6 +18,7 @@ Env:
     DISPLAY_TIMEZONE    — default Europe/Vienna
 """
 import ipaddress
+import json
 import os
 import zoneinfo
 from datetime import datetime, timezone
@@ -928,7 +929,7 @@ async def get_expenses() -> list[dict]:
     raw = await get_saved_setting("expenses")
     if raw:
         try:
-            items = _json.loads(raw)
+            items = json.loads(raw)
             out = []
             for it in items:
                 if isinstance(it, dict) and str(it.get("name") or "").strip():
@@ -1001,7 +1002,7 @@ async def post_settings(request: Request):
             except (TypeError, ValueError):
                 return JSONResponse(status_code=400, content={"success": False, "error": "expenses: amount not a number"})
             clean.append({"name": str(it["name"]).strip()[:80], "amount": amount})
-        await save_setting("expenses", _json.dumps(clean, ensure_ascii=False))
+        await save_setting("expenses", json.dumps(clean, ensure_ascii=False))
     return {
         "success": True,
         "community_slug": slug or None,
