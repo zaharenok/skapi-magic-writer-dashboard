@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import type {
   DashboardSettings,
   FinanceSettings,
+  Expense,
   DashboardStats,
   DashboardUser,
   SyncRun,
@@ -130,13 +131,17 @@ export async function saveSettings(
 }
 
 export async function saveFinance(
-  finance: FinanceSettings
-): Promise<{ success: boolean; error?: string; finance?: FinanceSettings }> {
+  finance: FinanceSettings | null,
+  expenses?: Expense[]
+): Promise<{ success: boolean; error?: string; finance?: FinanceSettings; expenses?: Expense[] }> {
   try {
+    const body: Record<string, unknown> = {}
+    if (finance) body.finance = finance
+    if (expenses) body.expenses = expenses
     const res = await fetch('/api/settings', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ finance }),
+      body: JSON.stringify(body),
     })
     return await res.json()
   } catch (e) {

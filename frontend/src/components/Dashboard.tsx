@@ -286,7 +286,8 @@ export default function Dashboard({ isDark, onToggleTheme }: Props) {
           <div>
             <h1 className="text-lg font-semibold">Magic Writer · Monetization Dashboard</h1>
             <p className="text-xs text-muted-foreground">
-              Триал → подписка через сообщество · воронка и конверсия
+              Триал → подписка через сообщество · воронка и конверсия ·{' '}
+              <span title="версия сборки">build {__BUILD_ID__}</span>
             </p>
           </div>
           <button

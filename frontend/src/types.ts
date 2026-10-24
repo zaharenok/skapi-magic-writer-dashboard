@@ -28,6 +28,11 @@ export interface DashboardStats {
   daily?: DailyStat[]
 }
 
+export interface Expense {
+  name: string
+  amount: number
+}
+
 export interface FinanceSettings {
   ai_price_input: number
   ai_price_output: number
@@ -129,6 +134,7 @@ export interface DashboardSettings {
   trial_posts: number
   community_price: number
   finance?: FinanceSettings
+  expenses?: Expense[]
 }
 
 export interface UserDetail {

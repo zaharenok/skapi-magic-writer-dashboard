@@ -923,21 +923,43 @@ async def get_finance_settings() -> dict:
                 pass
     return result
 
+async def get_expenses() -> list[dict]:
+    """Регулярные расходы: dashboard_settings 'expenses' (JSON), иначе инфра-дефолт."""
+    raw = await get_saved_setting("expenses")
+    if raw:
+        try:
+            items = _json.loads(raw)
+            out = []
+            for it in items:
+                if isinstance(it, dict) and str(it.get("name") or "").strip():
+                    out.append({
+                        "name": str(it["name"]).strip()[:80],
+                        "amount": round(max(0.0, float(it.get("amount", 0))), 2),
+                    })
+            if out:
+                return out
+        except (ValueError, TypeError):
+            pass
+    infra = (await get_finance_settings())["infra_cost"]
+    return [{"name": "Инфраструктура (VPS+домен)", "amount": infra}]
+
 
 @app.get("/api/settings")
 async def get_settings(request: Request):
-    """Сохранённые настройки дашборда (community_slug, финансы)."""
+    """Сохранённые настройки дашборда (community_slug, финансы, расходы)."""
     if not _is_allowed(_client_ip(request)):
         return JSONResponse(status_code=404, content={"detail": "Not Found"})
     slug = await get_community_slug()
     saved = await get_saved_setting("community_slug")
     finance = await get_finance_settings()
+    expenses = await get_expenses()
     return {
         "community_slug": slug,
         "source": "saved" if saved else "env",
         "trial_posts": TRIAL_POSTS_LIMIT,
         "community_price": COMMUNITY_PRICE,
         "finance": finance,
+        "expenses": expenses,
     }
 
 
@@ -953,7 +975,8 @@ async def post_settings(request: Request):
 
     slug = (body.get("community_slug") or "").strip().rstrip("/")
     finance = body.get("finance")
-    if not slug and not finance:
+    expenses = body.get("expenses")
+    if not slug and not finance and expenses is None:
         return JSONResponse(status_code=400, content={"success": False, "error": "nothing to save"})
 
     if slug:
@@ -966,7 +989,25 @@ async def post_settings(request: Request):
                 except (TypeError, ValueError):
                     return JSONResponse(status_code=400, content={"success": False, "error": f"{key}: not a number"})
                 await save_setting(f"fin_{key}", str(val))
-    return {"success": True, "community_slug": slug or None, "finance": await get_finance_settings()}
+    if expenses is not None:
+        if not isinstance(expenses, list) or len(expenses) > 20:
+            return JSONResponse(status_code=400, content={"success": False, "error": "expenses: invalid list"})
+        clean = []
+        for it in expenses:
+            if not isinstance(it, dict) or not str(it.get("name") or "").strip():
+                return JSONResponse(status_code=400, content={"success": False, "error": "expenses: name required"})
+            try:
+                amount = round(max(0.0, float(it.get("amount", 0))), 2)
+            except (TypeError, ValueError):
+                return JSONResponse(status_code=400, content={"success": False, "error": "expenses: amount not a number"})
+            clean.append({"name": str(it["name"]).strip()[:80], "amount": amount})
+        await save_setting("expenses", _json.dumps(clean, ensure_ascii=False))
+    return {
+        "success": True,
+        "community_slug": slug or None,
+        "finance": await get_finance_settings(),
+        "expenses": await get_expenses(),
+    }
 
 
 @app.post("/api/sync-trigger")
