@@ -1001,7 +1001,12 @@ async def dashboard_page(request: Request):
         return JSONResponse(status_code=404, content={"detail": "Not Found"})
     index_path = FRONTEND_DIST / "index.html"
     if index_path.exists():
-        return index_path.read_text(encoding="utf-8")
+        # no-cache: index.html всегда ре-валидуется, иначе браузер держит старый
+        # бандл после деплоя (симптом: «ничего не кликается»)
+        return HTMLResponse(
+            content=index_path.read_text(encoding="utf-8"),
+            headers={"Cache-Control": "no-cache"},
+        )
     return "<h1>Frontend not built. Run: cd frontend && npm run build</h1>"
 
 

@@ -212,6 +212,7 @@ function UserDetailDrawer({
 
 export default function Dashboard({ isDark, onToggleTheme }: Props) {
   const { stats, funnel, events, sync } = useDashboardData()
+  const settingsData = useSettings().data
   const groupInfo = useGroupInfo()
   const posts = usePosts()
   const [tab, setTab] = useState('overview')
@@ -320,7 +321,7 @@ export default function Dashboard({ isDark, onToggleTheme }: Props) {
                 <DailyChart stats={stats.data} dark={isDark} />
               </div>
             </div>
-            <DailyBreakdown daily={stats.data?.daily} />
+            <DailyBreakdown daily={stats.data?.daily} finance={settingsData?.finance} price={stats.data?.community_price ?? 0} />
             <div className="rounded-xl border border-border bg-card p-4">
               <div className="mb-2 text-sm font-medium">Членство сообщества во времени</div>
               <MembershipChart stats={stats.data} dark={isDark} />
