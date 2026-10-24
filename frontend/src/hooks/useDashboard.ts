@@ -3,9 +3,10 @@ import type {
   DashboardSettings,
   DashboardStats,
   DashboardUser,
-  Funnel,
-  MembershipEvent,
   SyncRun,
+  MembershipEvent,
+  Funnel,
+  ScheduledPostRow,
   UserDetail,
   UserState,
 } from '../types'
@@ -112,6 +113,45 @@ export async function saveSettings(
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ community_slug: communitySlug }),
+    })
+    return await res.json()
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e)
+    return { success: false, error: msg }
+  }
+}
+
+export function usePosts() {
+  return usePolling<{ posts: ScheduledPostRow[] }>('/api/posts?limit=50', 20000)
+}
+
+export async function adjustPosts(
+  skoolUserId: string,
+  action: 'reset' | 'revoke' | 'bonus',
+  posts = 0,
+): Promise<{ success: boolean; error?: string; posts_used?: number; posts_limit?: number }> {
+  try {
+    const res = await fetch(`/api/users/${encodeURIComponent(skoolUserId)}/posts-adjust`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action, posts }),
+    })
+    return await res.json()
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e)
+    return { success: false, error: msg }
+  }
+}
+
+export async function setBanned(
+  skoolUserId: string,
+  banned: boolean,
+): Promise<{ success: boolean; error?: string; is_banned?: boolean }> {
+  try {
+    const res = await fetch(`/api/users/${encodeURIComponent(skoolUserId)}/ban`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ banned }),
     })
     return await res.json()
   } catch (e) {

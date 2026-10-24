@@ -48,6 +48,7 @@ export interface DashboardUser {
   quota_used: number
   quota_limit: number
   quota_percent: number
+  is_banned: boolean
 }
 
 export interface MembershipEvent {
@@ -89,7 +90,30 @@ export interface UserDetail {
   last_seen_at: string
   is_banned: boolean
   membership_events: { event_type: 'joined' | 'left'; detected_at: string; community_slug: string }[]
+  posts_used: number
+  posts_total: number
+  lang: string | null
+  admin_actions: AdminAction[]
   recent_requests: { endpoint: string; status_code: number; success: boolean; created_at: string }[]
+}
+
+export interface AdminAction {
+  action: string
+  details: string | null
+  created_at: string
+}
+
+export interface ScheduledPostRow {
+  id: number
+  user_id: string
+  title: string
+  community_slug: string
+  language: string
+  status: 'pending' | 'published' | 'failed' | string
+  scheduled_for: string
+  published_at: string | null
+  published_url: string | null
+  error: string
 }
 
 export const STATE_LABELS: Record<UserState, string> = {

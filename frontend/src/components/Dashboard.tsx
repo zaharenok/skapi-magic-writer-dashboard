@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import type { DashboardUser, UserState } from '../types'
-import { useDashboardData, useUsers, useUserDetail } from '../hooks/useDashboard'
+import { useDashboardData, useUsers, useUserDetail, usePosts, adjustPosts, setBanned } from '../hooks/useDashboard'
 import KpiCards from './KpiCards'
 import FunnelChart from './FunnelChart'
 import DailyChart from './DailyChart'
@@ -8,6 +8,8 @@ import MembershipChart from './MembershipChart'
 import UsersTable from './UsersTable'
 import EventFeed from './EventFeed'
 import SyncPanel from './SyncPanel'
+import PostsTable from './PostsTable'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs'
 import { Moon, Sun } from 'lucide-react'
 
 interface Props {
@@ -38,6 +40,10 @@ function UserDetailDrawer({ userId, onClose }: { userId: string; onClose: () => 
               <div className="text-xs text-muted-foreground">client_id: {data.client_id}</div>
               <div className="text-xs text-muted-foreground">создан: {data.created_at}</div>
               <div className="text-xs text-muted-foreground">последняя активность: {data.last_seen_at}</div>
+              <div className="text-xs text-muted-foreground">
+                постов израсходовано: {data.posts_used} · всего успешно: {data.posts_total}
+                {data.lang ? ` · язык: ${data.lang}` : ''}
+              </div>
               <div className="text-xs">
                 {data.is_banned ? <span className="text-red-500">забанен</span> : <span className="text-green-600 dark:text-green-400">не забанен</span>}
               </div>
@@ -77,6 +83,22 @@ function UserDetailDrawer({ userId, onClose }: { userId: string; onClose: () => 
                 </ul>
               )}
             </div>
+            <div>
+              <div className="mb-2 font-medium">Ручные действия</div>
+              {data.admin_actions.length === 0 ? (
+                <div className="text-xs text-muted-foreground">не было</div>
+              ) : (
+                <ul className="space-y-1">
+                  {data.admin_actions.map((a, i) => (
+                    <li key={i} className="flex items-center gap-2 text-xs">
+                      <span className="font-mono text-muted-foreground">{a.created_at}</span>
+                      <span className="rounded bg-muted px-1.5 py-0.5 font-mono">{a.action}</span>
+                      <span className="text-muted-foreground">{a.details}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
           </div>
         )}
       </div>
@@ -86,9 +108,41 @@ function UserDetailDrawer({ userId, onClose }: { userId: string; onClose: () => 
 
 export default function Dashboard({ isDark, onToggleTheme }: Props) {
   const { stats, funnel, events, sync } = useDashboardData()
+  const posts = usePosts()
   const [stateFilter, setStateFilter] = useState<UserState | 'all'>('all')
   const users = useUsers(stateFilter)
   const [selected, setSelected] = useState<DashboardUser | null>(null)
+  const [busy, setBusy] = useState<string | null>(null)
+
+  const handleAdjust = async (u: DashboardUser, action: 'reset' | 'revoke' | 'bonus') => {
+    const labels: Record<string, string> = {
+      reset: `сбросить триал ${u.display_name || u.skool_user_id} (снова ${u.posts_limit} постов)?`,
+      bonus: `подарить +5 постов ${u.display_name || u.skool_user_id}?`,
+      revoke: `отобрать триал у ${u.display_name || u.skool_user_id} (счётчик = ${u.posts_limit})?`,
+    }
+    if (!confirm(labels[action])) return
+    setBusy(u.skool_user_id)
+    try {
+      const r = await adjustPosts(u.skool_user_id, action, 5)
+      if (!r.success) alert(`Ошибка: ${r.error}`)
+    } finally {
+      setBusy(null)
+      users.reload()
+    }
+  }
+
+  const handleToggleBan = async (u: DashboardUser) => {
+    const verb = u.is_banned ? 'разблокировать' : 'ЗАБАНИТЬ'
+    if (!confirm(`${verb} ${u.display_name || u.skool_user_id}?`)) return
+    setBusy(u.skool_user_id)
+    try {
+      const r = await setBanned(u.skool_user_id, !u.is_banned)
+      if (!r.success) alert(`Ошибка: ${r.error}`)
+    } finally {
+      setBusy(null)
+      users.reload()
+    }
+  }
 
   return (
     <div className="min-h-screen bg-background text-foreground">
@@ -110,45 +164,59 @@ export default function Dashboard({ isDark, onToggleTheme }: Props) {
         </div>
       </header>
 
-      <main className="mx-auto max-w-7xl space-y-4 px-4 py-4">
-        <KpiCards stats={stats.data} activeState={stateFilter} onSelectState={setStateFilter} />
+      <main className="mx-auto max-w-7xl px-4 py-4">
+        <Tabs defaultValue="overview">
+          <TabsList>
+            <TabsTrigger value="overview">Обзор</TabsTrigger>
+            <TabsTrigger value="users">Пользователи</TabsTrigger>
+            <TabsTrigger value="posts">Посты</TabsTrigger>
+            <TabsTrigger value="settings">Настройки</TabsTrigger>
+          </TabsList>
 
-        <div className="grid gap-4 lg:grid-cols-3">
-          <div className="rounded-xl border border-border bg-card p-4 lg:col-span-1">
-            <div className="mb-2 text-sm font-medium">Воронка</div>
-            <FunnelChart funnel={funnel.data} dark={isDark} />
-          </div>
-          <div className="rounded-xl border border-border bg-card p-4 lg:col-span-2">
-            <div className="mb-2 text-sm font-medium">Новые юзеры и подписчики (30 дней)</div>
-            <DailyChart stats={stats.data} dark={isDark} />
-          </div>
-        </div>
+          <TabsContent value="overview" className="space-y-4">
+            <KpiCards stats={stats.data} activeState={stateFilter} onSelectState={setStateFilter} />
+            <div className="grid gap-4 lg:grid-cols-3">
+              <div className="rounded-xl border border-border bg-card p-4 lg:col-span-1">
+                <div className="mb-2 text-sm font-medium">Воронка</div>
+                <FunnelChart funnel={funnel.data} dark={isDark} />
+              </div>
+              <div className="rounded-xl border border-border bg-card p-4 lg:col-span-2">
+                <div className="mb-2 text-sm font-medium">Новые юзеры и подписчики (30 дней)</div>
+                <DailyChart stats={stats.data} dark={isDark} />
+              </div>
+            </div>
+            <div className="rounded-xl border border-border bg-card p-4">
+              <div className="mb-2 text-sm font-medium">Членство сообщества во времени</div>
+              <MembershipChart stats={stats.data} dark={isDark} />
+            </div>
+            <EventFeed events={events.data?.events ?? null} />
+            {stats.error && (
+              <div className="rounded-xl border border-red-500/40 bg-red-500/10 p-3 text-sm text-red-600 dark:text-red-400">
+                Ошибка загрузки данных: {stats.error}. Проверьте DATABASE_URL и что таблицы созданы (init_db / schema_membership).
+              </div>
+            )}
+          </TabsContent>
 
-        <div className="rounded-xl border border-border bg-card p-4">
-          <div className="mb-2 text-sm font-medium">Членство сообщества во времени</div>
-          <MembershipChart stats={stats.data} dark={isDark} />
-        </div>
-
-        <div className="grid gap-4 lg:grid-cols-3">
-          <div className="lg:col-span-2">
+          <TabsContent value="users">
             <UsersTable
               users={users.data?.users ?? null}
               stateFilter={stateFilter}
               onFilterChange={setStateFilter}
               onSelectUser={setSelected}
+              onAdjust={handleAdjust}
+              onToggleBan={handleToggleBan}
+              busy={busy}
             />
-          </div>
-          <div className="space-y-4">
-            <SyncPanel sync={sync.data?.sync ?? null} onDone={sync.reload} />
-            <EventFeed events={events.data?.events ?? null} />
-          </div>
-        </div>
+          </TabsContent>
 
-        {stats.error && (
-          <div className="rounded-xl border border-red-500/40 bg-red-500/10 p-3 text-sm text-red-600 dark:text-red-400">
-            Ошибка загрузки данных: {stats.error}. Проверьте DATABASE_URL и что таблицы созданы (init_db / schema_membership).
-          </div>
-        )}
+          <TabsContent value="posts">
+            <PostsTable posts={posts.data?.posts ?? null} />
+          </TabsContent>
+
+          <TabsContent value="settings">
+            <SyncPanel sync={sync.data?.sync ?? null} onDone={sync.reload} />
+          </TabsContent>
+        </Tabs>
       </main>
 
       {selected && <UserDetailDrawer userId={selected.skool_user_id} onClose={() => setSelected(null)} />}

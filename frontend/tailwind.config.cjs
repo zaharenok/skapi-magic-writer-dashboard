@@ -29,9 +29,21 @@ module.exports = {
           DEFAULT: 'var(--color-background-surface)',
           foreground: 'var(--color-text-primary)',
         },
+        destructive: {
+          DEFAULT: '#ef4444',
+          foreground: '#ffffff',
+        },
         border: 'var(--color-border)',
         input: 'var(--color-border)',
         ring: 'var(--color-border-emphasized)',
+      },
+      keyframes: {
+        'border-beam': {
+          '100%': { 'offset-distance': '100%' },
+        },
+      },
+      animation: {
+        'border-beam': 'border-beam calc(var(--duration) * 1s) infinite linear',
       },
       borderRadius: {
         lg: 'var(--radius, 0.5rem)',

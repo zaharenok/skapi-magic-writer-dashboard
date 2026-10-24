@@ -359,6 +359,8 @@ async def dashboard_users(
             "WHERE created_at::date = CURRENT_DATE GROUP BY user_id"
         )
         today_map = {r["user_id"]: r["c"] for r in today_rows}
+        banned_rows = await conn.fetch("SELECT user_id FROM users WHERE is_banned")
+        banned_set = {r["user_id"] for r in banned_rows}
 
     users = []
     for r in rows:
@@ -375,6 +377,7 @@ async def dashboard_users(
             "state": r["state"],
             "posts_used": r["posts_used"] or 0,
             "posts_limit": TRIAL_POSTS_LIMIT,
+            "is_banned": r["skool_user_id"] in banned_set,
             "requests_today": today_map.get(r["id"], 0),
             "requests_total": req_map.get(r["id"], {}).get("total", 0),
             "quota_used": quota_used,
@@ -408,6 +411,11 @@ async def user_detail(skool_user_id: str, request: Request):
             "WHERE user_id = $1 ORDER BY created_at DESC LIMIT 50",
             row["id"],
         )
+        admin_actions = await conn.fetch(
+            "SELECT action, details, created_at FROM dashboard_admin_actions "
+            "WHERE skool_user_id = $1 ORDER BY created_at DESC LIMIT 20",
+            skool_user_id,
+        )
     return {
         "id": row["id"],
         "skool_user_id": row["user_id"],
@@ -416,6 +424,17 @@ async def user_detail(skool_user_id: str, request: Request):
         "created_at": to_local_str(row["created_at"]),
         "last_seen_at": to_local_str(row["last_seen_at"]),
         "is_banned": row["is_banned"],
+        "posts_used": row["posts_used"] or 0,
+        "posts_total": row["posts_total"] or 0,
+        "lang": row["lang"],
+        "admin_actions": [
+            {
+                "action": a["action"],
+                "details": a["details"],
+                "created_at": to_local_str(a["created_at"]),
+            }
+            for a in admin_actions
+        ],
         "membership_events": [
             {
                 "event_type": e["event_type"],
@@ -433,6 +452,132 @@ async def user_detail(skool_user_id: str, request: Request):
             }
             for r in req_rows
         ],
+    }
+
+
+# ═══════════════════════════════════════════════════════
+# РУЧНОЕ УПРАВЛЕНИЕ: триал, бан, аудит
+# ═══════════════════════════════════════════════════════
+
+_admin_init = False
+
+
+async def _ensure_admin_table(pool) -> None:
+    """Журнал ручных действий (идемпотентно, один раз на процесс)."""
+    global _admin_init
+    if _admin_init:
+        return
+    async with pool.acquire() as conn:
+        await conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS dashboard_admin_actions (
+                id SERIAL PRIMARY KEY,
+                skool_user_id TEXT NOT NULL,
+                action TEXT NOT NULL,
+                details TEXT,
+                created_at TIMESTAMPTZ DEFAULT NOW()
+            )
+            """
+        )
+    _admin_init = True
+
+
+@app.post("/api/users/{skool_user_id}/posts-adjust")
+async def posts_adjust(skool_user_id: str, request: Request):
+    """Ручной триал: reset — снова полные N постов; revoke — досрочно исчерпан;
+    bonus N — подарить N постов (уменьшить счётчик)."""
+    if not _is_allowed(_client_ip(request)):
+        return JSONResponse(status_code=404, content={"detail": "Not Found"})
+    pool = await get_pool()
+    if pool is None:
+        return {"error": "DATABASE_URL not set"}
+    body = await request.json()
+    action = (body.get("action") or "").strip().lower()
+    posts = max(0, int(body.get("posts") or 0))
+    if action == "reset":
+        sql = "UPDATE users SET posts_used = 0 WHERE user_id = $1 RETURNING posts_used"
+        details = "сброс счётчика триала"
+    elif action == "revoke":
+        sql = f"UPDATE users SET posts_used = {int(TRIAL_POSTS_LIMIT)} WHERE user_id = $1 RETURNING posts_used"
+        details = "триал досрочно исчерпан"
+    elif action == "bonus" and posts > 0:
+        sql = "UPDATE users SET posts_used = GREATEST(0, posts_used - $2) WHERE user_id = $1 RETURNING posts_used"
+        details = f"бонус: +{posts} постов"
+    else:
+        return JSONResponse(status_code=400, content={"detail": "bad action"})
+    await _ensure_admin_table(pool)
+    async with pool.acquire() as conn:
+        if action == "bonus":
+            row = await conn.fetchrow(sql, skool_user_id, posts)
+        else:
+            row = await conn.fetchrow(sql, skool_user_id)
+        if row is None:
+            return JSONResponse(status_code=404, content={"detail": "User not found"})
+        await conn.execute(
+            "INSERT INTO dashboard_admin_actions (skool_user_id, action, details) VALUES ($1, $2, $3)",
+            skool_user_id, f"posts_{action}", details,
+        )
+    return {"success": True, "posts_used": row["posts_used"], "posts_limit": TRIAL_POSTS_LIMIT}
+
+
+@app.post("/api/users/{skool_user_id}/ban")
+async def set_banned(skool_user_id: str, request: Request):
+    """Бан/разбан: is_banned=True блокирует /ai/* (check_access → banned)."""
+    if not _is_allowed(_client_ip(request)):
+        return JSONResponse(status_code=404, content={"detail": "Not Found"})
+    pool = await get_pool()
+    if pool is None:
+        return {"error": "DATABASE_URL not set"}
+    body = await request.json()
+    banned = bool(body.get("banned"))
+    reason = (body.get("reason") or ("dashboard: ручная блокировка" if banned else "")).strip()
+    await _ensure_admin_table(pool)
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            "UPDATE users SET is_banned = $2, ban_reason = $3 WHERE user_id = $1 RETURNING is_banned",
+            skool_user_id, banned, reason if banned else None,
+        )
+        if row is None:
+            return JSONResponse(status_code=404, content={"detail": "User not found"})
+        await conn.execute(
+            "INSERT INTO dashboard_admin_actions (skool_user_id, action, details) VALUES ($1, $2, $3)",
+            skool_user_id, "ban" if banned else "unban",
+            reason if banned else "разблокировка",
+        )
+    return {"success": True, "is_banned": row["is_banned"]}
+
+
+@app.get("/api/posts")
+async def posts_feed(request: Request, limit: int = 50):
+    """Последние отложенные посты — что происходит с публикациями."""
+    if not _is_allowed(_client_ip(request)):
+        return JSONResponse(status_code=404, content={"detail": "Not Found"})
+    pool = await get_pool()
+    if pool is None:
+        return {"error": "DATABASE_URL not set"}
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            "SELECT id, user_id, COALESCE(NULLIF(title, ''), LEFT(content, 80)) AS title, "
+            "community_slug, language, status, scheduled_for, published_at, published_url, error_message "
+            "FROM scheduled_posts ORDER BY created_at DESC LIMIT $1",
+            min(limit, 200),
+        )
+    return {
+        "posts": [
+            {
+                "id": r["id"],
+                "user_id": r["user_id"],
+                "title": r["title"],
+                "community_slug": r["community_slug"],
+                "language": r["language"],
+                "status": r["status"],
+                "scheduled_for": to_local_str(r["scheduled_for"]),
+                "published_at": to_local_str(r["published_at"]),
+                "published_url": r["published_url"],
+                "error": (r["error_message"] or "")[:200],
+            }
+            for r in rows
+        ]
     }
 
 

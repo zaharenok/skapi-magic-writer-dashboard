@@ -1,17 +1,21 @@
 import type { DashboardUser, UserState } from '../types'
 import { STATE_COLORS, STATE_LABELS } from '../types'
 import { cn } from '../lib/utils'
+import { Button } from './ui/button'
 
 interface Props {
   users: DashboardUser[] | null
   stateFilter: UserState | 'all'
   onFilterChange: (s: UserState | 'all') => void
   onSelectUser: (u: DashboardUser) => void
+  onAdjust: (u: DashboardUser, action: 'reset' | 'revoke' | 'bonus') => void
+  onToggleBan: (u: DashboardUser) => void
+  busy: string | null
 }
 
 const FILTERS: (UserState | 'all')[] = ['all', 'trial', 'subscribed', 'trial_expired', 'churned']
 
-export default function UsersTable({ users, stateFilter, onFilterChange, onSelectUser }: Props) {
+export default function UsersTable({ users, stateFilter, onFilterChange, onSelectUser, onAdjust, onToggleBan, busy }: Props) {
   return (
     <div className="rounded-xl border border-border bg-card">
       <div className="flex flex-wrap items-center gap-2 border-b border-border p-3">
@@ -44,12 +48,13 @@ export default function UsersTable({ users, stateFilter, onFilterChange, onSelec
               <th className="px-3 py-2 font-medium">Запросы</th>
               <th className="px-3 py-2 font-medium">Квота / мес</th>
               <th className="px-3 py-2 font-medium">Последняя активность</th>
+              <th className="px-3 py-2 font-medium text-right">Действия</th>
             </tr>
           </thead>
           <tbody>
             {!users || users.length === 0 ? (
               <tr>
-                <td colSpan={7} className="px-3 py-6 text-center text-muted-foreground">
+                <td colSpan={8} className="px-3 py-6 text-center text-muted-foreground">
                   Нет данных по фильтру
                 </td>
               </tr>
@@ -69,6 +74,11 @@ export default function UsersTable({ users, stateFilter, onFilterChange, onSelec
                     >
                       {STATE_LABELS[u.state]}
                     </span>
+                    {u.is_banned && (
+                      <span className="ml-1 inline-flex rounded-full bg-red-500/20 px-2 py-0.5 text-xs text-red-500">
+                        бан
+                      </span>
+                    )}
                   </td>
                   <td className="px-3 py-2 font-mono text-xs">{u.posts_used}/{u.posts_limit}</td>
                   <td className="px-3 py-2">
@@ -90,6 +100,46 @@ export default function UsersTable({ users, stateFilter, onFilterChange, onSelec
                     </div>
                   </td>
                   <td className="px-3 py-2 text-muted-foreground">{u.last_active_at || '—'}</td>
+                  <td className="px-3 py-2">
+                    <div className="flex justify-end gap-1" onClick={(e) => e.stopPropagation()}>
+                      <Button
+                        variant="outline"
+                        size="xs"
+                        disabled={busy === u.skool_user_id}
+                        title="Сбросить триал: снова полные N постов"
+                        onClick={() => onAdjust(u, 'reset')}
+                      >
+                        Сброс
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="xs"
+                        disabled={busy === u.skool_user_id}
+                        title="Подарить +5 постов (уменьшить счётчик)"
+                        onClick={() => onAdjust(u, 'bonus')}
+                      >
+                        +5
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="xs"
+                        disabled={busy === u.skool_user_id}
+                        title="Отобрать триал: счётчик = лимиту (ватермарк для не-членов)"
+                        onClick={() => onAdjust(u, 'revoke')}
+                      >
+                        Отобрать
+                      </Button>
+                      <Button
+                        variant={u.is_banned ? 'outline' : 'destructive'}
+                        size="xs"
+                        disabled={busy === u.skool_user_id}
+                        title={u.is_banned ? 'Разблокировать' : 'Забанить: /ai/* вернёт banned'}
+                        onClick={() => onToggleBan(u)}
+                      >
+                        {u.is_banned ? 'Разбан' : 'Бан'}
+                      </Button>
+                    </div>
+                  </td>
                 </tr>
               ))
             )}
