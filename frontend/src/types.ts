@@ -23,7 +23,17 @@ export interface DashboardStats {
   trial_posts: number
   community_price: number
   community_slug: string
+  ai_this_month?: number
+  generations_total?: number
   daily?: DailyStat[]
+}
+
+export interface FinanceSettings {
+  ai_price_input: number
+  ai_price_output: number
+  avg_tokens_in: number
+  avg_tokens_out: number
+  infra_cost: number
 }
 
 export interface DailyStat {
@@ -118,6 +128,7 @@ export interface DashboardSettings {
   source: 'saved' | 'env'
   trial_posts: number
   community_price: number
+  finance?: FinanceSettings
 }
 
 export interface UserDetail {

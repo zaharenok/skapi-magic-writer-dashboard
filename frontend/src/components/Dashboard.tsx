@@ -10,6 +10,7 @@ import EventFeed from './EventFeed'
 import SyncPanel from './SyncPanel'
 import PostsTable from './PostsTable'
 import DailyBreakdown from './DailyBreakdown'
+import FinanceTab from './FinanceTab'
 import GroupInfoCard from './GroupInfoCard'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs'
 import { Moon, Sun } from 'lucide-react'
@@ -303,6 +304,7 @@ export default function Dashboard({ isDark, onToggleTheme }: Props) {
             <TabsTrigger value="overview">Обзор</TabsTrigger>
             <TabsTrigger value="users">Пользователи</TabsTrigger>
             <TabsTrigger value="posts">Посты</TabsTrigger>
+            <TabsTrigger value="finance">Финансы</TabsTrigger>
             <TabsTrigger value="settings">Настройки</TabsTrigger>
           </TabsList>
 
@@ -346,6 +348,10 @@ export default function Dashboard({ isDark, onToggleTheme }: Props) {
 
           <TabsContent value="posts">
             <PostsTable posts={posts.data?.posts ?? null} onOpenUser={setDetailId} />
+          </TabsContent>
+
+          <TabsContent value="finance">
+            <FinanceTab stats={stats.data} />
           </TabsContent>
 
           <TabsContent value="settings">

@@ -294,8 +294,15 @@ async def dashboard_stats(request: Request, days: int = 30):
             "SELECT user_id, COUNT(*) AS c FROM api_requests WHERE user_id IS NOT NULL GROUP BY user_id"
         )
         req_map = {r["user_id"]: r["c"] for r in req_rows}
-        month_usage = await conn.fetch(MONTH_USAGE_SQL)
         month_map = {r["user_id"]: r["c"] for r in month_usage}
+        ai_this_month = await conn.fetchval(
+            "SELECT COUNT(*) FROM ai_generations WHERE created_at >= date_trunc('month', NOW())"
+        )
+        generations_total = await conn.fetchval(
+            "SELECT COALESCE(SUM(posts_total), 0) FROM users "
+            "WHERE user_id IS NOT NULL AND user_id <> ALL($1::text[])",
+            exclude,
+        )
 
         daily_new = await conn.fetch(
             "SELECT created_at::date AS d, COUNT(DISTINCT user_id) AS c FROM users "
@@ -324,9 +331,8 @@ async def dashboard_stats(request: Request, days: int = 30):
                    AND u.user_id IS NOT NULL AND u.user_id <> ALL($2::text[])) AS new_users,
                 (SELECT COUNT(*) FROM api_requests ar WHERE ar.created_at::date = d::date
                    AND NOT EXISTS (SELECT 1 FROM users u2 WHERE u2.id = ar.user_id AND u2.user_id = ANY($2::text[]))) AS requests,
-                (SELECT COUNT(*) FROM api_requests ar WHERE ar.created_at::date = d::date
-                   AND ar.endpoint LIKE '/ai%'
-                   AND NOT EXISTS (SELECT 1 FROM users u2 WHERE u2.id = ar.user_id AND u2.user_id = ANY($2::text[]))) AS ai_requests,
+                (SELECT COUNT(*) FROM ai_generations g WHERE g.created_at::date = d::date
+                   AND NOT EXISTS (SELECT 1 FROM users u2 WHERE u2.id = g.user_id AND u2.user_id = ANY($2::text[]))) AS ai_requests,
                 (SELECT COUNT(*) FROM scheduled_posts sp WHERE sp.status = 'published'
                    AND sp.published_at::date = d::date
                    AND (sp.user_id IS NULL OR sp.user_id <> ALL($2::text[]))) AS posts_published,
@@ -364,6 +370,8 @@ async def dashboard_stats(request: Request, days: int = 30):
         "active_24h": active_24h or 0,
         "requests_today": requests_today or 0,
         "requests_this_month": requests_this_month or 0,
+        "ai_this_month": ai_this_month or 0,
+        "generations_total": generations_total or 0,
         "users_over_quota": over_quota,
         "scheduled_posts": scheduled,
         "states": counts,
@@ -893,35 +901,71 @@ async def sync_status(request: Request):
     }
 
 
+FIN_DEFAULTS = {
+    "ai_price_input": 0.6,    # $ за 1М входных токенов (GLM-4.7, поправьте под тариф Z.ai)
+    "ai_price_output": 2.2,   # $ за 1М выходных токенов
+    "avg_tokens_in": 1500,    # средний промпт генерации
+    "avg_tokens_out": 800,    # средний ответ генерации
+    "infra_cost": 10.0,       # $/мес VPS + домен
+}
+
+
+async def get_finance_settings() -> dict:
+    """Финансовые константы: dashboard_settings (fin_*) с дефолтами."""
+    result = dict(FIN_DEFAULTS)
+    for key in FIN_DEFAULTS:
+        saved = await get_saved_setting(f"fin_{key}")
+        if saved is not None:
+            try:
+                result[key] = float(saved)
+            except ValueError:
+                pass
+    return result
+
+
 @app.get("/api/settings")
 async def get_settings(request: Request):
-    """Сохранённые настройки дашборда (community_slug и др.)."""
+    """Сохранённые настройки дашборда (community_slug, финансы)."""
     if not _is_allowed(_client_ip(request)):
         return JSONResponse(status_code=404, content={"detail": "Not Found"})
     slug = await get_community_slug()
     saved = await get_saved_setting("community_slug")
+    finance = await get_finance_settings()
     return {
         "community_slug": slug,
         "source": "saved" if saved else "env",
         "trial_posts": TRIAL_POSTS_LIMIT,
         "community_price": COMMUNITY_PRICE,
+        "finance": finance,
     }
 
 
 @app.post("/api/settings")
 async def post_settings(request: Request):
-    """Сохранить community_slug (upsert в dashboard_settings)."""
+    """Сохранить community_slug и/или финансовые константы (upsert в dashboard_settings)."""
     if not _is_allowed(_client_ip(request)):
         return JSONResponse(status_code=404, content={"detail": "Not Found"})
     try:
         body = await request.json()
     except Exception:
         return JSONResponse(status_code=400, content={"success": False, "error": "invalid JSON"})
+
     slug = (body.get("community_slug") or "").strip().rstrip("/")
-    if not slug:
-        return JSONResponse(status_code=400, content={"success": False, "error": "community_slug required"})
-    await save_setting("community_slug", slug)
-    return {"success": True, "community_slug": slug, "source": "saved"}
+    finance = body.get("finance")
+    if not slug and not finance:
+        return JSONResponse(status_code=400, content={"success": False, "error": "nothing to save"})
+
+    if slug:
+        await save_setting("community_slug", slug)
+    if isinstance(finance, dict):
+        for key in FIN_DEFAULTS:
+            if key in finance:
+                try:
+                    val = max(0.0, float(finance[key]))
+                except (TypeError, ValueError):
+                    return JSONResponse(status_code=400, content={"success": False, "error": f"{key}: not a number"})
+                await save_setting(f"fin_{key}", str(val))
+    return {"success": True, "community_slug": slug or None, "finance": await get_finance_settings()}
 
 
 @app.post("/api/sync-trigger")

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import type {
   DashboardSettings,
+  FinanceSettings,
   DashboardStats,
   DashboardUser,
   SyncRun,
@@ -120,6 +121,22 @@ export async function saveSettings(
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ community_slug: communitySlug }),
+    })
+    return await res.json()
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e)
+    return { success: false, error: msg }
+  }
+}
+
+export async function saveFinance(
+  finance: FinanceSettings
+): Promise<{ success: boolean; error?: string; finance?: FinanceSettings }> {
+  try {
+    const res = await fetch('/api/settings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ finance }),
     })
     return await res.json()
   } catch (e) {
