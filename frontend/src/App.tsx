@@ -9,14 +9,13 @@ export default function App() {
   )
 
   useEffect(() => {
-    document.documentElement.setAttribute('data-theme', isDark ? 'dark' : 'light')
     localStorage.setItem('theme', isDark ? 'dark' : 'light')
   }, [isDark])
 
   const toggleTheme = () => setIsDark(!isDark)
 
   return (
-    <Theme theme={neutralTheme}>
+    <Theme theme={neutralTheme} mode={isDark ? 'dark' : 'light'}>
       <Dashboard isDark={isDark} onToggleTheme={toggleTheme} />
     </Theme>
   )
