@@ -1,11 +1,12 @@
-import type { DashboardStats, UserState } from '../types'
+import type { DashboardStats, UserState, UsersFilter } from '../types'
 import { STATE_COLORS, STATE_LABELS } from '../types'
 import { cn } from '../lib/utils'
 
 interface Props {
   stats: DashboardStats | null
-  activeState: UserState | 'all'
-  onSelectState: (s: UserState | 'all') => void
+  activeState: UsersFilter
+  onSelectState: (s: UsersFilter) => void
+  onOpenPosts: () => void
 }
 
 function fmt(n: number): string {
@@ -14,26 +15,34 @@ function fmt(n: number): string {
 
 const STATE_ORDER: UserState[] = ['trial', 'subscribed', 'trial_expired', 'churned']
 
-export default function KpiCards({ stats, activeState, onSelectState }: Props) {
+export default function KpiCards({ stats, activeState, onSelectState, onOpenPosts }: Props) {
   if (!stats) return null
   const money = stats.mrr_estimate > 0 ? `${fmt(stats.mrr_estimate)} $` : '—'
 
   return (
     <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">
-      <div className="rounded-xl border border-border bg-card p-4">
+      <button
+        onClick={() => onSelectState('all')}
+        className={cn(
+          'rounded-xl border p-4 text-left transition-colors',
+          activeState === 'all' ? 'border-ring ring-1 ring-ring' : 'border-border bg-card hover:bg-accent',
+        )}
+      >
         <div className="text-xs text-muted-foreground">Всего юзеров</div>
         <div className="mt-1 text-2xl font-semibold">{fmt(stats.total_users)}</div>
-        <div className="mt-1 text-xs text-muted-foreground">
-          сделали запрос: {fmt(stats.made_request)}
-        </div>
-      </div>
-      <div className="rounded-xl border border-border bg-card p-4">
+        <div className="mt-1 text-xs text-muted-foreground">сделали запрос: {fmt(stats.made_request)} · клик — список</div>
+      </button>
+      <button
+        onClick={() => onSelectState('active24')}
+        className={cn(
+          'rounded-xl border p-4 text-left transition-colors',
+          activeState === 'active24' ? 'border-ring ring-1 ring-ring' : 'border-border bg-card hover:bg-accent',
+        )}
+      >
         <div className="text-xs text-muted-foreground">Активных (24ч)</div>
         <div className="mt-1 text-2xl font-semibold">{fmt(stats.active_24h)}</div>
-        <div className="mt-1 text-xs text-muted-foreground">
-          запросов сегодня: {fmt(stats.requests_today)}
-        </div>
-      </div>
+        <div className="mt-1 text-xs text-muted-foreground">запросов сегодня: {fmt(stats.requests_today)} · клик — список</div>
+      </button>
       <div className="rounded-xl border border-border bg-card p-4">
         <div className="text-xs text-muted-foreground">Конверсия trial → подписка</div>
         <div className="mt-1 text-2xl font-semibold">{stats.conversion_rate}%</div>
@@ -62,7 +71,10 @@ export default function KpiCards({ stats, activeState, onSelectState }: Props) {
           сверх квоты: <span className={stats.users_over_quota > 0 ? 'text-red-500' : ''}>{fmt(stats.users_over_quota)}</span>
         </div>
       </div>
-      <div className="rounded-xl border border-border bg-card p-4">
+      <button
+        onClick={onOpenPosts}
+        className="rounded-xl border border-border bg-card p-4 text-left transition-colors hover:bg-accent"
+      >
         <div className="text-xs text-muted-foreground">Отложенные посты</div>
         <div className="mt-1 text-2xl font-semibold">{fmt(stats.scheduled_posts.total)}</div>
         <div className="mt-1 flex gap-2 text-xs">
@@ -70,7 +82,8 @@ export default function KpiCards({ stats, activeState, onSelectState }: Props) {
           <span className="text-green-600 dark:text-green-400">{fmt(stats.scheduled_posts.published)} опубликовано</span>
           <span className={stats.scheduled_posts.failed > 0 ? 'text-red-500' : ''}>{fmt(stats.scheduled_posts.failed)} ошибок</span>
         </div>
-      </div>
+        <div className="mt-1 text-xs text-muted-foreground">клик — вкладка «Посты»</div>
+      </button>
 
       {STATE_ORDER.map((s) => (
         <button

@@ -358,10 +358,12 @@ async def funnel(request: Request):
 async def dashboard_users(
     request: Request,
     state: str = "",
+    active_hours: int = 0,
+    has_requests: int = 0,
     limit: int = 100,
     offset: int = 0,
 ):
-    """Список пользователей с денежной стадией; фильтр по state."""
+    """Список пользователей; фильтры: state, активность за N часов, наличие запросов."""
     if not _is_allowed(_client_ip(request)):
         return JSONResponse(status_code=404, content={"detail": "Not Found"})
     pool = await get_pool()
@@ -369,9 +371,17 @@ async def dashboard_users(
         return {"error": "DATABASE_URL not set"}
 
     state = state.strip().lower()
-    where = ""
+    conds = []
     if state in ("trial", "subscribed", "trial_expired", "churned"):
-        where = f"WHERE state = '{state}'"
+        conds.append(f"state = '{state}'")
+    if active_hours > 0:
+        conds.append(f"last_seen_at >= NOW() - INTERVAL '{min(int(active_hours), 720)} hours'")
+    if has_requests:
+        conds.append(
+            "EXISTS (SELECT 1 FROM api_requests ar JOIN users u2 ON u2.id = ar.user_id "
+            "WHERE u2.user_id = t.skool_user_id)"
+        )
+    where = ("WHERE " + " AND ".join(conds)) if conds else ""
 
     sql = f"SELECT * FROM ({STATE_SQL}) t {where} ORDER BY t.created_at DESC LIMIT $2 OFFSET $3"
     slug = await get_community_slug()
@@ -728,7 +738,19 @@ async def membership_events(request: Request, limit: int = 30):
         return {"error": "DATABASE_URL not set"}
     async with pool.acquire() as conn:
         rows = await conn.fetch(
-            "SELECT * FROM membership_events ORDER BY detected_at DESC LIMIT $1", limit
+            """
+            SELECT e.id, e.community_slug, e.skool_user_id, e.event_type, e.detected_at,
+                   COALESCE(NULLIF(m.name, ''), NULLIF(e.name, '')) AS name,
+                   COALESCE(NULLIF(m.username, ''), NULLIF(e.username, '')) AS username
+            FROM membership_events e
+            LEFT JOIN LATERAL (
+                SELECT c.name, c.username FROM community_members c
+                WHERE c.skool_user_id = e.skool_user_id
+                ORDER BY c.last_seen_at DESC NULLS LAST LIMIT 1
+            ) m ON TRUE
+            ORDER BY e.detected_at DESC LIMIT $1
+            """,
+            limit,
         )
     return {
         "events": [

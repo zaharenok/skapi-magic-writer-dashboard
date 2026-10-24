@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import type { DashboardUser, UserState } from '../types'
+import type { DashboardUser, UserState, UsersFilter } from '../types'
 import { useDashboardData, useUsers, useUserDetail, usePosts, useGroupInfo, adjustPosts, setBanned, setComp } from '../hooks/useDashboard'
 import KpiCards from './KpiCards'
 import FunnelChart from './FunnelChart'
@@ -210,15 +210,16 @@ export default function Dashboard({ isDark, onToggleTheme }: Props) {
   const groupInfo = useGroupInfo()
   const posts = usePosts()
   const [tab, setTab] = useState('overview')
-  const [stateFilter, setStateFilter] = useState<UserState | 'all'>('all')
+  const [stateFilter, setStateFilter] = useState<UsersFilter>('all')
   const users = useUsers(stateFilter)
   const [detailId, setDetailId] = useState<string | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
 
-  const selectState = (s: UserState | 'all') => {
+  const selectState = (s: UsersFilter) => {
     setStateFilter(s)
     setTab('users')
   }
+  const openPosts = () => setTab('posts')
   const handleAdjust = async (u: DashboardUser, action: 'reset' | 'revoke' | 'bonus') => {
     const labels: Record<string, string> = {
       reset: `сбросить триал ${u.display_name || u.skool_user_id} (снова ${u.posts_limit} постов)?`,
@@ -262,7 +263,7 @@ export default function Dashboard({ isDark, onToggleTheme }: Props) {
   }
 
   const handleFunnelClick = (stage: string) => {
-    const map: Record<string, UserState | 'all'> = {
+    const map: Record<string, UsersFilter> = {
       trial_active: 'trial',
       subscribed: 'subscribed',
       trial_expired: 'trial_expired',
@@ -302,7 +303,7 @@ export default function Dashboard({ isDark, onToggleTheme }: Props) {
           </TabsList>
 
           <TabsContent value="overview" className="space-y-4">
-            <KpiCards stats={stats.data} activeState={stateFilter} onSelectState={selectState} />
+            <KpiCards stats={stats.data} activeState={stateFilter} onSelectState={selectState} onOpenPosts={openPosts} />
             <div className="grid gap-4 lg:grid-cols-3">
               <div className="rounded-xl border border-border bg-card p-4 lg:col-span-1">
                 <div className="mb-2 text-sm font-medium">Воронка (клик — список)</div>

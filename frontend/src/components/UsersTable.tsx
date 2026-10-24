@@ -1,12 +1,18 @@
-import type { DashboardUser, UserState } from '../types'
+import type { DashboardUser, UserState, UsersFilter } from '../types'
 import { STATE_COLORS, STATE_LABELS } from '../types'
 import { cn } from '../lib/utils'
-import { Button } from './ui/button'
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+} from './ui/dropdown-menu'
 
 interface Props {
   users: DashboardUser[] | null
-  stateFilter: UserState | 'all'
-  onFilterChange: (s: UserState | 'all') => void
+  stateFilter: UsersFilter
+  onFilterChange: (s: UsersFilter) => void
   onSelectUser: (u: DashboardUser) => void
   onAdjust: (u: DashboardUser, action: 'reset' | 'revoke' | 'bonus') => void
   onToggleBan: (u: DashboardUser) => void
@@ -14,7 +20,7 @@ interface Props {
   busy: string | null
 }
 
-const FILTERS: (UserState | 'all')[] = ['all', 'trial', 'subscribed', 'trial_expired', 'churned']
+const FILTERS: UsersFilter[] = ['all', 'trial', 'subscribed', 'trial_expired', 'churned']
 
 export default function UsersTable({ users, stateFilter, onFilterChange, onSelectUser, onAdjust, onToggleBan, onToggleComp, busy }: Props) {
   return (
@@ -33,7 +39,7 @@ export default function UsersTable({ users, stateFilter, onFilterChange, onSelec
                   : 'border-border text-muted-foreground hover:bg-accent',
               )}
             >
-              {f === 'all' ? 'Все' : STATE_LABELS[f]}
+              {f === 'all' ? 'Все' : STATE_LABELS[f as UserState]}
             </button>
           ))}
         </div>
@@ -133,55 +139,44 @@ export default function UsersTable({ users, stateFilter, onFilterChange, onSelec
                     </div>
                   </td>
                   <td className="px-3 py-2 text-muted-foreground">{u.last_active_at || '—'}</td>
-                  <td className="px-3 py-2">
-                    <div className="flex justify-end gap-1" onClick={(e) => e.stopPropagation()}>
-                      <Button
-                        variant="outline"
-                        size="xs"
-                        disabled={busy === u.skool_user_id}
-                        title="Сбросить триал: снова полные N постов"
-                        onClick={() => onAdjust(u, 'reset')}
-                      >
-                        Сброс
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="xs"
-                        disabled={busy === u.skool_user_id}
-                        title="Подарить +5 постов (уменьшить счётчик)"
-                        onClick={() => onAdjust(u, 'bonus')}
-                      >
-                        +5
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="xs"
-                        disabled={busy === u.skool_user_id}
-                        title="Отобрать триал: счётчик = лимиту (ватермарк для не-членов)"
-                        onClick={() => onAdjust(u, 'revoke')}
-                      >
-                        Отобрать
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="xs"
-                        disabled={busy === u.skool_user_id}
-                        title={u.comp ? 'Отозвать комплимент-подписку' : 'Комплимент-подписка: доступ без оплаты (мимо Skool)'}
-                        className="text-purple-500"
-                        onClick={() => onToggleComp(u.skool_user_id, !u.comp)}
-                      >
-                        {u.comp ? '💝 отозвать' : '💝 подписка'}
-                      </Button>
-                      <Button
-                        variant={u.is_banned ? 'outline' : 'destructive'}
-                        size="xs"
-                        disabled={busy === u.skool_user_id}
-                        title={u.is_banned ? 'Разблокировать' : 'Забанить: /ai/* вернёт banned'}
-                        onClick={() => onToggleBan(u)}
-                      >
-                        {u.is_banned ? 'Разбан' : 'Бан'}
-                      </Button>
-                    </div>
+                  <td className="px-3 py-2 text-right" onClick={(e) => e.stopPropagation()}>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <button
+                          className="rounded-lg border border-border px-2 py-1 text-xs transition-colors hover:bg-accent"
+                          title="Действия"
+                        >
+                          ⋯ Действия
+                        </button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem disabled={busy === u.skool_user_id} onClick={() => onAdjust(u, 'reset')}>
+                          🔄 Сбросить триал
+                        </DropdownMenuItem>
+                        <DropdownMenuItem disabled={busy === u.skool_user_id} onClick={() => onAdjust(u, 'bonus')}>
+                          🎁 Подарить +5 постов
+                        </DropdownMenuItem>
+                        <DropdownMenuItem disabled={busy === u.skool_user_id} onClick={() => onAdjust(u, 'revoke')}>
+                          ⛔ Отобрать триал
+                        </DropdownMenuItem>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem
+                          disabled={busy === u.skool_user_id}
+                          className="text-purple-500 focus:text-purple-500"
+                          onClick={() => onToggleComp(u.skool_user_id, !u.comp)}
+                        >
+                          {u.comp ? '💔 Отозвать комплимент' : '💝 Комплимент-подписка'}
+                        </DropdownMenuItem>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem
+                          disabled={busy === u.skool_user_id}
+                          destructive
+                          onClick={() => onToggleBan(u)}
+                        >
+                          {u.is_banned ? '✅ Разблокировать' : '🚫 Забанить'}
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
                   </td>
                 </tr>
               ))

@@ -3,6 +3,8 @@
 // ═══════════════════════════════════════════════
 
 export type UserState = 'trial' | 'subscribed' | 'trial_expired' | 'churned'
+/** Фильтр списка юзеров: стадии + спецразрезы (активные 24ч / делали запросы). */
+export type UsersFilter = UserState | 'all' | 'active24' | 'requested'
 
 export interface DashboardStats {
   total_users: number

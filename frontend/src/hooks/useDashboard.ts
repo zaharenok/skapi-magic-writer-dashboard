@@ -10,6 +10,7 @@ import type {
   GroupInfo,
   UserDetail,
   UserState,
+  UsersFilter,
 } from '../types'
 
 async function get<T>(path: string): Promise<T> {
@@ -58,9 +59,12 @@ export function useDashboardData() {
   return { stats, funnel, events, sync }
 }
 
-export function useUsers(stateFilter: UserState | 'all') {
-  const path = `/api/dashboard-users?state=${stateFilter === 'all' ? '' : stateFilter}&limit=200`
-  const hook = usePolling<{ users: DashboardUser[] }>(path, 30000)
+export function useUsers(filter: UsersFilter) {
+  const params = new URLSearchParams({ limit: '200' })
+  if (filter === 'active24') params.set('active_hours', '24')
+  else if (filter === 'requested') params.set('has_requests', '1')
+  else if (filter !== 'all') params.set('state', filter)
+  const hook = usePolling<{ users: DashboardUser[] }>(`/api/dashboard-users?${params}`, 30000)
   return hook
 }
 
