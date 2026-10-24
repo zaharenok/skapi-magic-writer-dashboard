@@ -843,15 +843,19 @@ async def sync_trigger(request: Request):
     slug = await get_community_slug()
     if not slug:
         return {"success": False, "error": "community slug not configured — укажите slug в панели синхронизации"}
-    async with httpx.AsyncClient(timeout=180) as client:
+    async with httpx.AsyncClient(timeout=300) as client:
         resp = await client.post(
             f"{SKAPI_BASE_URL}/admin/sync-community-members",
             params={"admin_key": SKAPI_ADMIN_SECRET, "community_slug": slug},
         )
     try:
-        return {"success": resp.status_code == 200, "result": resp.json()}
+        inner = resp.json()
     except Exception:
         return {"success": False, "error": f"Skapi responded {resp.status_code}"}
+    # inner: {"success": bool, ...} — успех только если сам sync удался
+    if not inner.get("success", False):
+        return {"success": False, "error": inner.get("error") or f"sync failed: {inner}"}
+    return {"success": True, "result": inner}
 
 
 @app.get("/dashboard", response_class=HTMLResponse)
