@@ -164,12 +164,15 @@ function UserDetailDrawer({
                 </ul>
               )}
             </div>
-            <div>
-              <div className="mb-2 font-medium">Последние запросы</div>
+            <details>
+              <summary className="mb-2 cursor-pointer select-none font-medium">
+                Последние запросы{' '}
+                <span className="text-xs text-muted-foreground">({data.recent_requests.length})</span>
+              </summary>
               {data.recent_requests.length === 0 ? (
                 <div className="text-xs text-muted-foreground">запросов нет</div>
               ) : (
-                <ul className="space-y-1">
+                <ul className="max-h-48 space-y-1 overflow-y-auto">
                   {data.recent_requests.map((r, i) => (
                     <li key={i} className="flex items-center gap-2 font-mono text-xs">
                       <span className={r.success ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}>
@@ -181,7 +184,7 @@ function UserDetailDrawer({
                   ))}
                 </ul>
               )}
-            </div>
+            </details>
             <div>
               <div className="mb-2 font-medium">Ручные действия</div>
               {data.admin_actions.length === 0 ? (
