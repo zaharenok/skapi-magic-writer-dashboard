@@ -516,6 +516,7 @@ async def dashboard_users(
             "joined_at": to_local_str(r["joined_at"]),
             "left_at": to_local_str(r["left_at"]),
             "state": r["state"],
+            "status_override": r["status_override"],
             "posts_used": r["posts_used"] or 0,
             "posts_limit": TRIAL_POSTS_LIMIT,
             "is_banned": r["skool_user_id"] in banned_set,
