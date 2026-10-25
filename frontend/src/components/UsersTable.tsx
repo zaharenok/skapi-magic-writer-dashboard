@@ -17,12 +17,13 @@ interface Props {
   onAdjust: (u: DashboardUser, action: 'reset' | 'revoke' | 'bonus') => void
   onToggleBan: (u: DashboardUser) => void
   onToggleComp: (skoolUserId: string, comp: boolean) => void
+  onSetStatus: (u: DashboardUser, status: 'auto' | UserState) => void
   busy: string | null
 }
 
-const FILTERS: UsersFilter[] = ['all', 'trial', 'subscribed', 'trial_expired', 'churned']
+const FILTERS: UsersFilter[] = ['all', 'trial', 'watermark', 'subscribed', 'trial_expired', 'churned']
 
-export default function UsersTable({ users, stateFilter, onFilterChange, onSelectUser, onAdjust, onToggleBan, onToggleComp, busy }: Props) {
+export default function UsersTable({ users, stateFilter, onFilterChange, onSelectUser, onAdjust, onToggleBan, onToggleComp, onSetStatus, busy }: Props) {
   return (
     <div className="rounded-xl border border-border bg-card">
       <div className="flex flex-wrap items-center gap-2 border-b border-border p-3">
@@ -105,6 +106,11 @@ export default function UsersTable({ users, stateFilter, onFilterChange, onSelec
                     >
                       {STATE_LABELS[u.state]}
                     </span>
+                    {u.status_override && (
+                      <span className="ml-1 inline-flex rounded-full bg-violet-500/20 px-2 py-0.5 text-xs text-violet-500" title={`Ручной статус: ${u.status_override}`}>
+                        📌
+                      </span>
+                    )}
                     {u.comp && (
                       <span className="ml-1 inline-flex rounded-full bg-purple-500/20 px-2 py-0.5 text-xs text-purple-500" title="Комплимент-подписка от админа">
                         💝
@@ -158,6 +164,25 @@ export default function UsersTable({ users, stateFilter, onFilterChange, onSelec
                         </DropdownMenuItem>
                         <DropdownMenuItem disabled={busy === u.skool_user_id} onClick={() => onAdjust(u, 'revoke')}>
                           ⛔ Отобрать триал
+                        </DropdownMenuItem>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem disabled={busy === u.skool_user_id} onClick={() => onSetStatus(u, 'auto')}>
+                          ♻️ Статус: авто
+                        </DropdownMenuItem>
+                        <DropdownMenuItem disabled={busy === u.skool_user_id} onClick={() => onSetStatus(u, 'trial')}>
+                          🆓 Статус: чистый триал
+                        </DropdownMenuItem>
+                        <DropdownMenuItem disabled={busy === u.skool_user_id} onClick={() => onSetStatus(u, 'watermark')}>
+                          💧 Статус: вотермарк
+                        </DropdownMenuItem>
+                        <DropdownMenuItem disabled={busy === u.skool_user_id} onClick={() => onSetStatus(u, 'subscribed')}>
+                          ⭐ Статус: подписан
+                        </DropdownMenuItem>
+                        <DropdownMenuItem disabled={busy === u.skool_user_id} onClick={() => onSetStatus(u, 'trial_expired')}>
+                          ⛔ Статус: просрочен
+                        </DropdownMenuItem>
+                        <DropdownMenuItem disabled={busy === u.skool_user_id} onClick={() => onSetStatus(u, 'churned')}>
+                          🚪 Статус: отписался
                         </DropdownMenuItem>
                         <DropdownMenuSeparator />
                         <DropdownMenuItem

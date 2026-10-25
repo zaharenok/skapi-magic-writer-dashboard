@@ -193,6 +193,23 @@ export function useGroupInfo() {
   return usePolling<GroupInfo>('/api/group-info', 120000)
 }
 
+export async function setUserStatus(
+  skoolUserId: string,
+  status: 'auto' | UserState,
+): Promise<{ success: boolean; error?: string; status_override?: string }> {
+  try {
+    const res = await fetch(`/api/users/${encodeURIComponent(skoolUserId)}/status`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status }),
+    })
+    return await res.json()
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e)
+    return { success: false, error: msg }
+  }
+}
+
 export async function setComp(
   skoolUserId: string,
   comp: boolean,

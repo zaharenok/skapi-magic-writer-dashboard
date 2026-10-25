@@ -2,7 +2,7 @@
 // API CONTRACT — типы ДОЛЖНЫ совпадать с server.py
 // ═══════════════════════════════════════════════
 
-export type UserState = 'trial' | 'subscribed' | 'trial_expired' | 'churned'
+export type UserState = 'trial' | 'watermark' | 'subscribed' | 'trial_expired' | 'churned'
 /** Фильтр списка юзеров: стадии + спецразрезы (активные 24ч / делали запросы). */
 export type UsersFilter = UserState | 'all' | 'active24' | 'requested'
 
@@ -72,6 +72,7 @@ export interface DashboardUser {
   joined_at: string | null
   left_at: string | null
   state: UserState
+  status_override: string | null
   posts_used: number
   posts_limit: number
   posts_total: number
@@ -189,6 +190,7 @@ export interface ScheduledPostRow {
 }
 
 export const STATE_LABELS: Record<UserState, string> = {
+  watermark: 'Вотермарк',
   trial: 'Триал',
   subscribed: 'Подписан',
   trial_expired: 'Просрочен',
@@ -196,6 +198,7 @@ export const STATE_LABELS: Record<UserState, string> = {
 }
 
 export const STATE_COLORS: Record<UserState, string> = {
+  watermark: '#8b5cf6',
   trial: '#3b82f6',
   subscribed: '#22c55e',
   trial_expired: '#f59e0b',

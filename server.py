@@ -41,6 +41,7 @@ DISPLAY_TIMEZONE = os.getenv("DISPLAY_TIMEZONE", "Europe/Vienna")
 PORT = int(os.getenv("PORT", "8000"))
 DATABASE_URL = os.getenv("DATABASE_URL", "")
 TRIAL_POSTS_LIMIT = int(os.getenv("TRIAL_POSTS_LIMIT", "5"))
+WATERMARK_POSTS_LIMIT = int(os.getenv("WATERMARK_POSTS_LIMIT", "10"))
 COMMUNITY_PRICE = float(os.getenv("COMMUNITY_PRICE", "0"))
 PAID_COMMUNITY_SLUG = os.getenv("PAID_COMMUNITY_SLUG", "").strip()
 SKAPI_BASE_URL = os.getenv("SKAPI_BASE_URL", "https://api.skapi.pro").rstrip("/")
@@ -204,6 +205,7 @@ SELECT
     a.posts_total,
     a.created_at,
     a.last_seen_at,
+    u.status_override,
     mem.comp,
     mem.first_seen_at AS joined_at,
     mem.left_at,
@@ -216,12 +218,14 @@ SELECT
         END,
         100
     ) AS quota_limit,
-    CASE
+    COALESCE(NULLIF(u.status_override, ''), CASE
         WHEN m.skool_user_id IS NOT NULL OR comp.skool_user_id IS NOT NULL THEN 'subscribed'
         WHEN le.skool_user_id IS NOT NULL THEN 'churned'
-        WHEN a.posts_used >= {TRIAL_POSTS_LIMIT} THEN 'trial_expired'
+        WHEN a.posts_used >= {WATERMARK_POSTS_LIMIT} THEN 'trial_expired'
+        WHEN a.posts_used >= {TRIAL_POSTS_LIMIT} THEN 'watermark'
         ELSE 'trial'
-    END AS state
+    END) AS state,
+    u.status_override
 FROM agg a
 LEFT JOIN mem ON mem.skool_user_id = a.skool_user_id
 LEFT JOIN users u ON u.id = a.id
@@ -459,7 +463,7 @@ async def dashboard_users(
 
     state = state.strip().lower()
     conds = []
-    if state in ("trial", "subscribed", "trial_expired", "churned"):
+    if state in ("trial", "watermark", "subscribed", "trial_expired", "churned"):
         conds.append(f"state = '{state}'")
     if active_hours > 0:
         conds.append(
@@ -655,6 +659,7 @@ async def _ensure_admin_table(pool) -> None:
     async with pool.acquire() as conn:
         await conn.execute(
             """
+            await conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS status_override VARCHAR(20)")
             CREATE TABLE IF NOT EXISTS dashboard_admin_actions (
                 id SERIAL PRIMARY KEY,
                 skool_user_id TEXT NOT NULL,
@@ -703,6 +708,35 @@ async def posts_adjust(skool_user_id: str, request: Request):
             skool_user_id, f"posts_{action}", details,
         )
     return {"success": True, "posts_used": row["posts_used"], "posts_limit": TRIAL_POSTS_LIMIT}
+
+
+@app.post("/api/users/{skool_user_id}/status")
+async def user_set_status(skool_user_id: str, request: Request):
+    """Ручной статус юзера: override поверх авто-стадии. 'auto' — вернуть автоматический расчёт."""
+    if not _is_allowed(_client_ip(request)):
+        return JSONResponse(status_code=404, content={"detail": "Not Found"})
+    pool = await get_pool()
+    if pool is None:
+        return {"error": "DATABASE_URL not set"}
+    body = await request.json()
+    status = (body.get("status") or "").strip().lower()
+    if status not in ("auto", "trial", "watermark", "subscribed", "trial_expired", "churned"):
+        return JSONResponse(status_code=400, content={"detail": "bad status"})
+    await _ensure_admin_table(pool)
+    async with pool.acquire() as conn:
+        await conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS status_override VARCHAR(20)")
+        row = await conn.fetchrow(
+            "UPDATE users SET status_override = NULLIF($2, 'auto') "
+            "WHERE user_id = $1 RETURNING status_override",
+            skool_user_id, status,
+        )
+        if row is None:
+            return JSONResponse(status_code=404, content={"detail": "User not found"})
+        await conn.execute(
+            "INSERT INTO dashboard_admin_actions (skool_user_id, action, details) VALUES ($1, $2, $3)",
+            skool_user_id, "set_status", f"ручной статус: {status}",
+        )
+    return {"success": True, "status_override": row["status_override"] or "auto"}
 
 
 @app.post("/api/users/{skool_user_id}/ban")

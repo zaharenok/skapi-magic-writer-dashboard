@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import type { DashboardUser, UserState, UsersFilter } from '../types'
-import { useDashboardData, useSettings, useUsers, useUserDetail, usePosts, useGroupInfo, adjustPosts, setBanned, setComp } from '../hooks/useDashboard'
+import { useDashboardData, useSettings, useUsers, useUserDetail, usePosts, useGroupInfo, adjustPosts, setBanned, setComp, setUserStatus } from '../hooks/useDashboard'
 import KpiCards from './KpiCards'
 import FunnelChart from './FunnelChart'
 import DailyChart from './DailyChart'
@@ -256,6 +256,26 @@ export default function Dashboard({ isDark, onToggleTheme }: Props) {
     }
   }
 
+  const handleSetStatus = async (u: DashboardUser, status: 'auto' | UserState) => {
+    const names: Record<string, string> = {
+      auto: 'авто (убрать ручной статус)',
+      trial: 'чистый триал',
+      watermark: 'вотермарк',
+      subscribed: 'подписан',
+      trial_expired: 'просрочен',
+      churned: 'отписался',
+    }
+    if (!confirm(`Выставить статус «${names[status]}» для ${u.display_name}?`)) return
+    setBusy(u.skool_user_id)
+    try {
+      const r = await setUserStatus(u.skool_user_id, status)
+      if (!r.success) alert(`Ошибка: ${r.error}`)
+    } finally {
+      setBusy(null)
+      users.reload()
+    }
+  }
+
   const handleComp = async (userId: string, compNext: boolean) => {
     if (!confirm(compNext ? 'выдать комплимент-подписку (доступ без оплаты)?' : 'отозвать комплимент-подписку?')) return
     setBusy(userId)
@@ -344,6 +364,7 @@ export default function Dashboard({ isDark, onToggleTheme }: Props) {
               onAdjust={handleAdjust}
               onToggleBan={handleToggleBan}
               onToggleComp={handleComp}
+              onSetStatus={handleSetStatus}
               busy={busy}
             />
           </TabsContent>
