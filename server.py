@@ -26,6 +26,7 @@ from pathlib import Path
 
 import asyncpg
 import httpx
+from fastapi.responses import RedirectResponse
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -240,6 +241,12 @@ GROUP BY user_id
 # ═══════════════════════════════════════════════════════
 # API ENDPOINTS
 # ═══════════════════════════════════════════════════════
+
+@app.get("/")
+def root_redirect():
+    """/ -> /dashboard (the UI lives there; bare / returned 404)."""
+    return RedirectResponse("/dashboard", status_code=307)
+
 
 @app.get("/health")
 async def health(request: Request):
