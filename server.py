@@ -460,6 +460,7 @@ async def dashboard_users(
     pool = await get_pool()
     if pool is None:
         return {"error": "DATABASE_URL not set"}
+    await _ensure_admin_table(pool)
 
     state = state.strip().lower()
     conds = []
@@ -657,9 +658,10 @@ async def _ensure_admin_table(pool) -> None:
     if _admin_init:
         return
     async with pool.acquire() as conn:
+        # Колонка ручных статусов (дашборд) — гарантируем до любых запросов.
+        await conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS status_override VARCHAR(20)")
         await conn.execute(
             """
-            await conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS status_override VARCHAR(20)")
             CREATE TABLE IF NOT EXISTS dashboard_admin_actions (
                 id SERIAL PRIMARY KEY,
                 skool_user_id TEXT NOT NULL,
