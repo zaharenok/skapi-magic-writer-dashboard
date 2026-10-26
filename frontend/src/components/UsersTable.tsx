@@ -7,6 +7,9 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubTrigger,
+  DropdownMenuSubContent,
 } from './ui/dropdown-menu'
 
 interface Props {
@@ -184,6 +187,32 @@ export default function UsersTable({ users, stateFilter, onFilterChange, onSelec
                         <DropdownMenuItem disabled={busy === u.skool_user_id} onClick={() => onSetStatus(u, 'churned')}>
                           🚪 Статус: отписался
                         </DropdownMenuItem>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuSub>
+                          <DropdownMenuSubTrigger disabled={busy === u.skool_user_id}>
+                            {u.status_override ? '📌 Статус: ' + u.status_override : '🎚 Задать статус'}
+                          </DropdownMenuSubTrigger>
+                          <DropdownMenuSubContent>
+                            <DropdownMenuItem disabled={busy === u.skool_user_id} onClick={() => onSetStatus(u, 'auto')}>
+                              ♻️ Авто (по членству)
+                            </DropdownMenuItem>
+                            <DropdownMenuItem disabled={busy === u.skool_user_id} onClick={() => onSetStatus(u, 'trial')}>
+                              🆓 Чистый триал (до 5)
+                            </DropdownMenuItem>
+                            <DropdownMenuItem disabled={busy === u.skool_user_id} onClick={() => onSetStatus(u, 'watermark')}>
+                              💧 Вотермарк (6–10)
+                            </DropdownMenuItem>
+                            <DropdownMenuItem disabled={busy === u.skool_user_id} onClick={() => onSetStatus(u, 'subscribed')}>
+                              ⭐ Подписан
+                            </DropdownMenuItem>
+                            <DropdownMenuItem disabled={busy === u.skool_user_id} onClick={() => onSetStatus(u, 'trial_expired')}>
+                              ⛔ Просрочен
+                            </DropdownMenuItem>
+                            <DropdownMenuItem disabled={busy === u.skool_user_id} onClick={() => onSetStatus(u, 'churned')}>
+                              🚪 Отписался
+                            </DropdownMenuItem>
+                          </DropdownMenuSubContent>
+                        </DropdownMenuSub>
                         <DropdownMenuSeparator />
                         <DropdownMenuItem
                           disabled={busy === u.skool_user_id}
