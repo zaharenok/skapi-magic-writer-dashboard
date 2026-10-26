@@ -272,7 +272,8 @@ async def dashboard_stats(request: Request, days: int = 30):
         return {"error": "DATABASE_URL not set"}
 
     slug = await get_community_slug()
-    exclude = await get_exclude_ids()
+    # Деньги/воронка: владелец не платник — исключаем всегда.
+    exclude = list(set(await get_exclude_ids()) | {DEFAULT_EXCLUDE})
     async with pool.acquire() as conn:
         rows = await conn.fetch(STATE_SQL, slug, exclude)
         total = len(rows)
@@ -427,7 +428,7 @@ async def funnel(request: Request):
         return {"error": "DATABASE_URL not set"}
     slug = await get_community_slug()
     async with pool.acquire() as conn:
-        exclude = await get_exclude_ids()
+        exclude = list(set(await get_exclude_ids()) | {DEFAULT_EXCLUDE})
         rows = await conn.fetch(STATE_SQL, slug, exclude)
         counts = {"trial": 0, "watermark": 0, "subscribed": 0, "trial_expired": 0, "churned": 0}
         for r in rows:
