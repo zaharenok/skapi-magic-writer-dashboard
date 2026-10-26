@@ -64,6 +64,9 @@ async def get_pool() -> asyncpg.Pool | None:
         if not DATABASE_URL:
             return None
         _pool = await asyncpg.create_pool(DATABASE_URL, min_size=1, max_size=5)
+        # Гарантируем колонку ручных статусов до ЛЮБОГО запроса — иначе
+        # endpoints, читающие users (stats/funnel/users), падают на 500.
+        await _ensure_admin_table(_pool)
     return _pool
 
 
