@@ -204,3 +204,32 @@ export const STATE_COLORS: Record<UserState, string> = {
   trial_expired: '#f59e0b',
   churned: '#ef4444',
 }
+
+/** Член сообщества из снимка sync (community_members); может не пользоваться расширением. */
+export interface CommunityMember {
+  skool_user_id: string
+  display_name: string
+  username: string | null
+  avatar_url: string | null
+  profile_url: string | null
+  state: 'subscribed' | 'churned'
+  is_current: boolean
+  comp: boolean
+  joined_at: string | null
+  last_seen_at: string | null
+  left_at: string | null
+  has_extension: boolean
+  posts_used: number
+  posts_total: number
+  last_active_at: string | null
+}
+
+export const MEMBER_STATE_LABELS: Record<CommunityMember['state'], string> = {
+  subscribed: 'В группе',
+  churned: 'Вышел',
+}
+
+export const MEMBER_STATE_COLORS: Record<CommunityMember['state'], string> = {
+  subscribed: '#22c55e',
+  churned: '#ef4444',
+}

@@ -5,6 +5,7 @@ import type {
   Expense,
   DashboardStats,
   DashboardUser,
+  CommunityMember,
   SyncRun,
   MembershipEvent,
   Funnel,
@@ -68,6 +69,13 @@ export function useUsers(filter: UsersFilter) {
   else if (filter !== 'all') params.set('state', filter)
   const hook = usePolling<{ users: DashboardUser[] }>(`/api/dashboard-users?${params}`, 30000)
   return hook
+}
+
+export function useMembers() {
+  return usePolling<{ members: CommunityMember[]; total: number; community_slug: string }>(
+    '/api/members',
+    60000,
+  )
 }
 
 export function useUserDetail(skoolUserId: string | null) {

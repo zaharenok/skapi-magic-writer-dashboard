@@ -1,11 +1,12 @@
 import { useState } from 'react'
-import type { DashboardUser, UserState, UsersFilter } from '../types'
-import { useDashboardData, useSettings, useUsers, useUserDetail, usePosts, useGroupInfo, adjustPosts, setBanned, setComp, setUserStatus } from '../hooks/useDashboard'
+import type { CommunityMember, DashboardUser, UserState, UsersFilter } from '../types'
+import { useDashboardData, useSettings, useUsers, useMembers, useUserDetail, usePosts, useGroupInfo, adjustPosts, setBanned, setComp, setUserStatus } from '../hooks/useDashboard'
 import KpiCards from './KpiCards'
 import FunnelChart from './FunnelChart'
 import DailyChart from './DailyChart'
 import MembershipChart from './MembershipChart'
 import UsersTable from './UsersTable'
+import MembersTable from './MembersTable'
 import EventFeed from './EventFeed'
 import SyncPanel from './SyncPanel'
 import PostsTable from './PostsTable'
@@ -215,6 +216,7 @@ export default function Dashboard({ isDark, onToggleTheme }: Props) {
   const settingsData = useSettings().data
   const groupInfo = useGroupInfo()
   const posts = usePosts()
+  const members = useMembers()
   const [tab, setTab] = useState('overview')
   const [stateFilter, setStateFilter] = useState<UsersFilter>('all')
   const users = useUsers(stateFilter)
@@ -325,6 +327,7 @@ export default function Dashboard({ isDark, onToggleTheme }: Props) {
           <TabsList>
             <TabsTrigger value="overview">Обзор</TabsTrigger>
             <TabsTrigger value="users">Пользователи</TabsTrigger>
+            <TabsTrigger value="members">Члены группы</TabsTrigger>
             <TabsTrigger value="posts">Посты</TabsTrigger>
             <TabsTrigger value="finance">Финансы</TabsTrigger>
             <TabsTrigger value="settings">Настройки</TabsTrigger>
@@ -366,6 +369,14 @@ export default function Dashboard({ isDark, onToggleTheme }: Props) {
               onToggleComp={handleComp}
               onSetStatus={handleSetStatus}
               busy={busy}
+            />
+          </TabsContent>
+
+          <TabsContent value="members">
+            <MembersTable
+              members={members.data?.members ?? null}
+              total={members.data?.total ?? 0}
+              onSelectUser={(skoolUserId) => setDetailId(skoolUserId)}
             />
           </TabsContent>
 

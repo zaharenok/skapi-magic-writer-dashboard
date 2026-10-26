@@ -919,6 +919,65 @@ async def membership_events(request: Request, limit: int = 30):
     }
 
 
+@app.get("/api/members")
+async def members_list(request: Request, limit: int = 500):
+    """Все члены сообщества из снимка sync — включая тех, кто не пользовался расширением.
+
+    Статус из снимка: subscribed = is_current или comp; churned = вышел (left_at).
+    Расширение-статистика (посты) подтягивается, если JWT-строки в users есть.
+    """
+    if not _is_allowed(_client_ip(request)):
+        return JSONResponse(status_code=404, content={"detail": "Not Found"})
+    pool = await get_pool()
+    if pool is None:
+        return {"error": "DATABASE_URL not set"}
+    slug = await get_community_slug()
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            """
+            SELECT cm.skool_user_id,
+                   COALESCE(NULLIF(cm.name, ''), cm.username, cm.skool_user_id) AS display_name,
+                   cm.username, cm.avatar_url, cm.profile_url,
+                   cm.is_current, cm.comp, cm.first_seen_at, cm.last_seen_at, cm.left_at,
+                   u.tokens, u.posts_used, u.posts_total, u.last_active_at
+            FROM community_members cm
+            LEFT JOIN LATERAL (
+                SELECT COUNT(*) AS tokens,
+                       COALESCE(SUM(posts_used), 0) AS posts_used,
+                       COALESCE(SUM(posts_total), 0) AS posts_total,
+                       MAX(last_seen_at) AS last_active_at
+                FROM users WHERE user_id = cm.skool_user_id
+            ) u ON TRUE
+            WHERE cm.community_slug = $1
+            ORDER BY cm.is_current DESC, cm.first_seen_at DESC
+            LIMIT $2
+            """,
+            slug,
+            min(limit, 2000),
+        )
+    members = []
+    for r in rows:
+        current = bool(r["is_current"] or r["comp"])
+        members.append({
+            "skool_user_id": r["skool_user_id"],
+            "display_name": r["display_name"],
+            "username": r["username"],
+            "avatar_url": r["avatar_url"],
+            "profile_url": r["profile_url"],
+            "state": "subscribed" if current else "churned",
+            "is_current": r["is_current"],
+            "comp": r["comp"],
+            "joined_at": to_local_str(r["first_seen_at"]),
+            "last_seen_at": to_local_str(r["last_seen_at"]),
+            "left_at": to_local_str(r["left_at"]),
+            "has_extension": (r["tokens"] or 0) > 0,
+            "posts_used": r["posts_used"] or 0,
+            "posts_total": r["posts_total"] or 0,
+            "last_active_at": to_local_str(r["last_active_at"]),
+        })
+    return {"members": members, "total": len(members), "community_slug": slug}
+
+
 @app.get("/api/sync-status")
 async def sync_status(request: Request):
     """Последний запуск синхронизации."""
