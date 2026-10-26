@@ -276,7 +276,7 @@ async def dashboard_stats(request: Request, days: int = 30):
     async with pool.acquire() as conn:
         rows = await conn.fetch(STATE_SQL, slug, exclude)
         total = len(rows)
-        counts = {"trial": 0, "subscribed": 0, "trial_expired": 0, "churned": 0}
+        counts = {"trial": 0, "watermark": 0, "subscribed": 0, "trial_expired": 0, "churned": 0}
         for r in rows:
             counts[r["state"]] += 1
 
@@ -429,7 +429,7 @@ async def funnel(request: Request):
     async with pool.acquire() as conn:
         exclude = await get_exclude_ids()
         rows = await conn.fetch(STATE_SQL, slug, exclude)
-        counts = {"trial": 0, "subscribed": 0, "trial_expired": 0, "churned": 0}
+        counts = {"trial": 0, "watermark": 0, "subscribed": 0, "trial_expired": 0, "churned": 0}
         for r in rows:
             counts[r["state"]] += 1
         made_request = await conn.fetchval(
