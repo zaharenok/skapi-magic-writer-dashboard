@@ -252,7 +252,9 @@ GROUP BY user_id
 @app.get("/")
 def root_redirect():
     """/ -> /dashboard (the UI lives there; bare / returned 404)."""
-    return RedirectResponse("/dashboard", status_code=307)
+    # Relative target: works at / (dashboard -> /dashboard) and under the
+    # tailscale serve prefix /mw (browser resolves it to /mw/dashboard).
+    return RedirectResponse("dashboard", status_code=307)
 
 
 @app.get("/health")
