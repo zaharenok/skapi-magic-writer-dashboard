@@ -1145,6 +1145,37 @@ async def sync_trigger(request: Request):
     return {"success": True, "result": inner}
 
 
+@app.get("/api/payment-recovery-stats")
+async def payment_recovery_stats(request: Request):
+    """Проксирует метрики Payment Recovery («$ recovered») из Skapi backend.
+
+    Skapi backend: GET /payment-recovery/stats (Epic A, app/payment_recovery_stats.py),
+    ответ {"success": bool, "result": {recovered_count, recovered_amount_usd,
+    active_sequences, recovery_rate}}. Отдаём как есть — типы во фронтенде
+    (dashboard/frontend/src/types.ts) обязаны совпадать с этой формой.
+    """
+    if not _is_allowed(_client_ip(request)):
+        return JSONResponse(status_code=404, content={"detail": "Not Found"})
+    if not SKAPI_ADMIN_SECRET:
+        return {"success": False, "error": "SKAPI_ADMIN_SECRET not configured"}
+    try:
+        async with httpx.AsyncClient(timeout=30) as client:
+            resp = await client.get(
+                f"{SKAPI_BASE_URL}/payment-recovery/stats",
+                params={"admin_key": SKAPI_ADMIN_SECRET},
+            )
+    except Exception as e:
+        return {"success": False, "error": f"Skapi backend unreachable: {e}"}
+    try:
+        inner = resp.json()
+    except Exception:
+        return {"success": False, "error": f"Skapi responded {resp.status_code}"}
+    if resp.status_code != 200 or not inner.get("success", False):
+        detail = inner.get("detail") if isinstance(inner, dict) else None
+        return {"success": False, "error": detail or f"Skapi responded {resp.status_code}"}
+    return inner
+
+
 @app.get("/dashboard", response_class=HTMLResponse)
 async def dashboard_page(request: Request):
     """React SPA entry point."""

@@ -1,7 +1,8 @@
 import { useState } from 'react'
 import type { CommunityMember, DashboardUser, UserState, UsersFilter } from '../types'
-import { useDashboardData, useSettings, useUsers, useMembers, useUserDetail, usePosts, useGroupInfo, adjustPosts, setBanned, setComp, setUserStatus } from '../hooks/useDashboard'
+import { useDashboardData, useSettings, useUsers, useMembers, useUserDetail, usePosts, useGroupInfo, usePaymentRecovery, adjustPosts, setBanned, setComp, setUserStatus } from '../hooks/useDashboard'
 import KpiCards from './KpiCards'
+import RecoveryCard from './RecoveryCard'
 import FunnelChart from './FunnelChart'
 import DailyChart from './DailyChart'
 import MembershipChart from './MembershipChart'
@@ -217,6 +218,7 @@ export default function Dashboard({ isDark, onToggleTheme }: Props) {
   const groupInfo = useGroupInfo()
   const posts = usePosts()
   const members = useMembers()
+  const recovery = usePaymentRecovery()
   const [tab, setTab] = useState('overview')
   const [stateFilter, setStateFilter] = useState<UsersFilter>('all')
   const users = useUsers(stateFilter)
@@ -335,6 +337,9 @@ export default function Dashboard({ isDark, onToggleTheme }: Props) {
 
           <TabsContent value="overview" className="space-y-4">
             <KpiCards stats={stats.data} activeState={stateFilter} onSelectState={selectState} onOpenPosts={openPosts} />
+            <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">
+              <RecoveryCard data={recovery.data} />
+            </div>
             <div className="grid gap-4 lg:grid-cols-3">
               <div className="rounded-xl border border-border bg-card p-4 lg:col-span-1">
                 <div className="mb-2 text-sm font-medium">Воронка (клик — список)</div>

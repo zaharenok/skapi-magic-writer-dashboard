@@ -33,6 +33,14 @@ export interface Expense {
   amount: number
 }
 
+/** Payment Recovery («$ recovered» widget) — Skapi backend GET /payment-recovery/stats. */
+export interface PaymentRecoveryStats {
+  recovered_count: number
+  recovered_amount_usd: number
+  active_sequences: number
+  recovery_rate: number
+}
+
 export interface FinanceSettings {
   ai_price_input: number
   ai_price_output: number

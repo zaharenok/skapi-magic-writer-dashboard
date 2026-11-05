@@ -5,6 +5,7 @@ import type {
   Expense,
   DashboardStats,
   DashboardUser,
+  PaymentRecoveryStats,
   CommunityMember,
   SyncRun,
   MembershipEvent,
@@ -199,6 +200,13 @@ export async function setBanned(
 
 export function useGroupInfo() {
   return usePolling<GroupInfo>('/api/group-info', 120000)
+}
+
+export function usePaymentRecovery() {
+  return usePolling<{ success: boolean; result?: PaymentRecoveryStats; error?: string }>(
+    '/api/payment-recovery-stats',
+    60000,
+  )
 }
 
 export async function setUserStatus(
